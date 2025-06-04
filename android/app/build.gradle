@@ -2,6 +2,7 @@ plugins {
     id "com.android.application"
     id "kotlin-android"
     id "dev.flutter.flutter-gradle-plugin"
+    id 'com.google.gms.google-services'
 }
 
 def localProperties = new Properties()
@@ -14,7 +15,7 @@ if (localPropertiesFile.exists()) {
 
 def flutterRoot = localProperties.getProperty('flutter.sdk')
 if (flutterRoot == null) {
-    throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
+    throw new Exception("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
 }
 
 def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
@@ -29,7 +30,7 @@ if (flutterVersionName == null) {
 
 android {
     namespace "com.example.hoseo"
-    compileSdkVersion 35
+    compileSdkVersion flutter.compileSdkVersion
     ndkVersion flutter.ndkVersion
 
     compileOptions {
@@ -39,6 +40,7 @@ android {
 
     kotlinOptions {
         jvmTarget = '17'
+        freeCompilerArgs += ['-Xskip-metadata-version-check']
     }
 
     sourceSets {
@@ -48,7 +50,7 @@ android {
     defaultConfig {
         applicationId "com.example.hoseo"
         minSdkVersion 23
-        targetSdkVersion 35
+        targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
     }
@@ -65,8 +67,9 @@ flutter {
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-    // implementation platform('com.google.firebase:firebase-bom:32.0.0')
-    // implementation 'com.google.firebase:firebase-analytics'
-    // implementation 'com.google.android.gms:play-services-auth:20.4.1'
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    implementation platform('com.google.firebase:firebase-bom:32.7.4')
+    implementation 'com.google.firebase:firebase-analytics'
+    implementation 'com.google.firebase:firebase-appcheck-playintegrity'
+    implementation 'com.google.firebase:firebase-appcheck'
 } 

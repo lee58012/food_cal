@@ -5,7 +5,7 @@
     <uses-feature android:name="android.hardware.camera" />
     <uses-feature android:name="android.hardware.camera.autofocus" />
     <application
-        android:label="다이어트 도우미"
+        android:label="hoseofood"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

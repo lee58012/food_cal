@@ -7,9 +7,10 @@ class User {
   final String gender;
   final int activityLevel; // 1-5 (낮음-높음)
   final int targetCalories;
-  final String? email;
-  final String? photoUrl;
-  final String? uid;
+  final String? uid; // Firebase 인증용
+  final String? email; // 사용자 이메일
+  final String? photoUrl; // 프로필 사진 URL
+  final String medicalCondition; // 정상, 당뇨, 고혈압, 고지혈증
 
   User({
     this.id,
@@ -20,9 +21,10 @@ class User {
     required this.gender,
     required this.activityLevel,
     required this.targetCalories,
+    this.uid,
     this.email,
     this.photoUrl,
-    this.uid,
+    required this.medicalCondition,
   });
 
   Map<String, dynamic> toMap() {
@@ -35,41 +37,27 @@ class User {
       'gender': gender,
       'activityLevel': activityLevel,
       'targetCalories': targetCalories,
+      'uid': uid,
       'email': email,
       'photoUrl': photoUrl,
-      'uid': uid,
+      'medicalCondition': medicalCondition,
     };
   }
 
   factory User.fromMap(Map<String, dynamic> map) {
     return User(
-      id: map['id'],
-      name: map['name'],
-      age: map['age'],
-      weight: map['weight'],
-      height: map['height'],
-      gender: map['gender'],
-      activityLevel: map['activityLevel'],
-      targetCalories: map['targetCalories'],
-      email: map['email'],
-      photoUrl: map['photoUrl'],
-      uid: map['uid'],
-    );
-  }
-
-  // 구글 로그인 데이터로 User 객체 생성
-  factory User.fromGoogleSignIn(Map<String, dynamic> userData) {
-    return User(
-      name: userData['displayName'] ?? '사용자',
-      age: 30, // 기본값
-      weight: 65.0, // 기본값
-      height: 170.0, // 기본값
-      gender: '남성', // 기본값
-      activityLevel: 2, // 기본값
-      targetCalories: 2000, // 기본값
-      email: userData['email'],
-      photoUrl: userData['photoUrl'],
-      uid: userData['uid'],
+      id: map['id'] as int?,
+      name: map['name'] as String,
+      age: map['age'] as int,
+      weight: (map['weight'] as num).toDouble(),
+      height: (map['height'] as num).toDouble(),
+      gender: map['gender'] as String,
+      activityLevel: map['activityLevel'] as int,
+      targetCalories: map['targetCalories'] as int,
+      uid: map['uid'] as String?,
+      email: map['email'] as String?,
+      photoUrl: map['photoUrl'] as String?,
+      medicalCondition: map['medicalCondition'] as String? ?? '정상',
     );
   }
 

@@ -1,36 +1,26 @@
 {
   "project_info": {
-    "project_number": "123456789000",
-    "project_id": "hoseo-diet-app",
-    "storage_bucket": "hoseo-diet-app.appspot.com"
+    "project_number": "1029843653320",
+    "project_id": "foodcal-41824",
+    "storage_bucket": "foodcal-41824.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:123456789000:android:abcdef1234567890",
+        "mobilesdk_app_id": "1:1029843653320:android:5eddacf16b8d536752cbfd",
         "android_client_info": {
           "package_name": "com.example.hoseo"
         }
       },
-      "oauth_client": [
-        {
-          "client_id": "123456789000-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
+      "oauth_client": [],
       "api_key": [
         {
-          "current_key": "your-api-key-here"
+          "current_key": "AIzaSyBDPVFUZCPh2t4DKHbR-fQlGa4HQsNAXfg"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "123456789000-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
+          "other_platform_oauth_client": []
         }
       }
     }
