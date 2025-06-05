@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously, unused_import, unused_field
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -22,8 +24,13 @@ class _CameraScreenState extends State<CameraScreen> {
   final _carbsController = TextEditingController();
   final _proteinController = TextEditingController();
   final _fatController = TextEditingController();
+  final _sodiumController = TextEditingController();
+  final _cholesterolController = TextEditingController();
+  final _sugarController = TextEditingController();
   bool _isAnalyzing = false;
   bool _isUploading = false;
+  bool _isAddingManually = false;
+  String _foodName = '';
 
   @override
   void dispose() {
@@ -32,6 +39,9 @@ class _CameraScreenState extends State<CameraScreen> {
     _carbsController.dispose();
     _proteinController.dispose();
     _fatController.dispose();
+    _sodiumController.dispose();
+    _cholesterolController.dispose();
+    _sugarController.dispose();
     super.dispose();
   }
 
@@ -61,7 +71,12 @@ class _CameraScreenState extends State<CameraScreen> {
           _carbsController.text = (result['carbs'] ?? 0).toString();
           _proteinController.text = (result['protein'] ?? 0).toString();
           _fatController.text = (result['fat'] ?? 0).toString();
+          _sodiumController.text = (result['sodium'] ?? 0).toString();
+          _cholesterolController.text = (result['cholesterol'] ?? 0).toString();
+          _sugarController.text = (result['sugar'] ?? 0).toString();
+          _foodName = result['name'] ?? '';
           _isAnalyzing = false;
+          _isAddingManually = true;
         });
       } catch (e) {
         setState(() {
@@ -100,7 +115,12 @@ class _CameraScreenState extends State<CameraScreen> {
           _carbsController.text = (result['carbs'] ?? 0).toString();
           _proteinController.text = (result['protein'] ?? 0).toString();
           _fatController.text = (result['fat'] ?? 0).toString();
+          _sodiumController.text = (result['sodium'] ?? 0).toString();
+          _cholesterolController.text = (result['cholesterol'] ?? 0).toString();
+          _sugarController.text = (result['sugar'] ?? 0).toString();
+          _foodName = result['name'] ?? '';
           _isAnalyzing = false;
+          _isAddingManually = true;
         });
       } catch (e) {
         setState(() {
@@ -130,14 +150,29 @@ class _CameraScreenState extends State<CameraScreen> {
 
       // 이미지 업로드
       final imageUrl = await foodProvider.uploadFoodImage(_imageFile!);
+      if (imageUrl == null) {
+        throw Exception('이미지 업로드에 실패했습니다.');
+      }
+
+      final name = _nameController.text;
+      final calories = int.tryParse(_caloriesController.text) ?? 0;
+      final carbs = double.tryParse(_carbsController.text) ?? 0;
+      final protein = double.tryParse(_proteinController.text) ?? 0;
+      final fat = double.tryParse(_fatController.text) ?? 0;
+      final sodium = double.tryParse(_sodiumController.text) ?? 0;
+      final cholesterol = double.tryParse(_cholesterolController.text) ?? 0;
+      final sugar = double.tryParse(_sugarController.text) ?? 0;
 
       // 음식 데이터 생성
       final food = Food(
-        name: _nameController.text,
-        calories: int.parse(_caloriesController.text),
-        carbs: double.parse(_carbsController.text),
-        protein: double.parse(_proteinController.text),
-        fat: double.parse(_fatController.text),
+        name: name,
+        calories: calories,
+        carbs: carbs,
+        protein: protein,
+        fat: fat,
+        sodium: sodium,
+        cholesterol: cholesterol,
+        sugar: sugar,
         imageUrl: imageUrl,
         dateTime: DateTime.now(),
       );
@@ -145,30 +180,57 @@ class _CameraScreenState extends State<CameraScreen> {
       // 음식 추가
       await foodProvider.addFood(food);
 
-      // 홈 화면으로 이동하여 결과 표시
       if (mounted) {
+        // 입력 필드 초기화
+        _resetForm();
+
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('식단이 성공적으로 저장되었습니다')));
 
-        // 홈 화면으로 이동 및 데이터 갱신
-        await foodProvider.loadFoods(); // 식단 데이터 새로고침
-        await foodProvider.getDailyCalorieIntake(DateTime.now()); // 칼로리 정보 업데이트
+        // 현재 날짜로 설정하여 오늘 추가한 식단이 표시되도록 함
+        foodProvider.selectDate(DateTime.now());
 
-        // 홈 화면으로 이동
+        // 홈 화면으로 이동하기 전에 데이터 갱신 확인
+        await Future.delayed(const Duration(milliseconds: 300));
+
+        // 홈 화면으로 이동 및 데이터 갱신
         mainScreenKey.currentState?.navigateToTab(0);
       }
     } catch (e) {
       if (mounted) {
+        String errorMessage = '식단 저장 중 오류가 발생했습니다';
+        if (e is Exception) {
+          errorMessage = e.toString().replaceAll('Exception: ', '');
+        }
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('식단 저장 중 오류가 발생했습니다: $e')));
+        ).showSnackBar(SnackBar(content: Text(errorMessage)));
       }
     } finally {
-      setState(() {
-        _isUploading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+        });
+      }
     }
+  }
+
+  // 입력 필드 초기화 메서드
+  void _resetForm() {
+    setState(() {
+      _imageFile = null;
+      _nameController.clear();
+      _caloriesController.clear();
+      _carbsController.clear();
+      _proteinController.clear();
+      _fatController.clear();
+      _sodiumController.clear();
+      _cholesterolController.clear();
+      _sugarController.clear();
+      _foodName = '';
+      _isAddingManually = false;
+    });
   }
 
   @override
@@ -295,72 +357,100 @@ class _CameraScreenState extends State<CameraScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // 탄수화물, 단백질, 지방 (한 줄에 3개)
-                    Row(
-                      children: [
-                        // 탄수화물
-                        Expanded(
-                          child: TextFormField(
-                            controller: _carbsController,
-                            decoration: const InputDecoration(
-                              labelText: '탄수화물 (g)',
-                              border: OutlineInputBorder(),
-                            ),
-                            keyboardType: TextInputType.number,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return '입력하세요';
-                              }
-                              if (double.tryParse(value) == null) {
-                                return '유효한 값';
-                              }
-                              return null;
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // 단백질
-                        Expanded(
-                          child: TextFormField(
-                            controller: _proteinController,
-                            decoration: const InputDecoration(
-                              labelText: '단백질 (g)',
-                              border: OutlineInputBorder(),
-                            ),
-                            keyboardType: TextInputType.number,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return '입력하세요';
-                              }
-                              if (double.tryParse(value) == null) {
-                                return '유효한 값';
-                              }
-                              return null;
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // 지방
-                        Expanded(
-                          child: TextFormField(
-                            controller: _fatController,
-                            decoration: const InputDecoration(
-                              labelText: '지방 (g)',
-                              border: OutlineInputBorder(),
-                            ),
-                            keyboardType: TextInputType.number,
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return '입력하세요';
-                              }
-                              if (double.tryParse(value) == null) {
-                                return '유효한 값';
-                              }
-                              return null;
-                            },
-                          ),
-                        ),
-                      ],
+                    // 영양소 입력 필드
+                    TextFormField(
+                      controller: _carbsController,
+                      decoration: const InputDecoration(
+                        labelText: '탄수화물 (g)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return '탄수화물을 입력하세요';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    TextFormField(
+                      controller: _proteinController,
+                      decoration: const InputDecoration(
+                        labelText: '단백질 (g)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return '단백질을 입력하세요';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    TextFormField(
+                      controller: _fatController,
+                      decoration: const InputDecoration(
+                        labelText: '지방 (g)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return '지방을 입력하세요';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    TextFormField(
+                      controller: _sugarController,
+                      decoration: const InputDecoration(
+                        labelText: '총당류 (g)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return '0';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    TextFormField(
+                      controller: _sodiumController,
+                      decoration: const InputDecoration(
+                        labelText: '나트륨 (mg)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return '0';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+
+                    TextFormField(
+                      controller: _cholesterolController,
+                      decoration: const InputDecoration(
+                        labelText: '콜레스테롤 (mg)',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return '0';
+                        }
+                        return null;
+                      },
                     ),
                     const SizedBox(height: 24),
 

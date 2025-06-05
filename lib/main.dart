@@ -1,3 +1,5 @@
+// ignore_for_file: library_private_types_in_public_api, avoid_print, use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hoseo/screens/home_screen.dart';
@@ -9,7 +11,6 @@ import 'package:hoseo/providers/user_provider.dart';
 import 'package:hoseo/providers/food_provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:hoseo/utils/database_helper.dart';
 import 'package:sqflite/sqflite.dart';
@@ -22,7 +23,6 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // SQLite 데이터베이스 설정
-  // 이 부분이 중요합니다
   databaseFactory = databaseFactory;
 
   try {
@@ -59,8 +59,23 @@ void main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    // 앱 시작 시 FoodProvider 초기화 - 단 한번만 실행
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 첫 프레임이 그려진 후 비동기 초기화 작업 수행
+      Provider.of<FoodProvider>(context, listen: false).initialize();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -98,6 +113,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   late int _currentIndex;
+  bool _dataInitialized = false;
 
   final List<Widget> _screens = [
     const HomeScreen(),
@@ -111,6 +127,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       setState(() {
         _currentIndex = index;
       });
+
+      // 홈 탭으로 이동할 때만 데이터 갱신
+      if (index == 0) {
+        _refreshHomeData();
+      }
     }
   }
 
@@ -133,21 +154,48 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // 앱이 포그라운드로 돌아왔을 때 데이터 새로고침
-      _loadUserData();
+      // 앱이 포그라운드로 돌아왔을 때 데이터 새로고침 (캐시 우선 사용)
+      _loadUserData(forceRefresh: false);
+
+      // 현재 홈 화면이면 데이터 갱신
+      if (_currentIndex == 0) {
+        _refreshHomeData();
+      }
     }
   }
 
-  Future<void> _loadUserData() async {
+  // 홈 화면 데이터 갱신 메서드 (캐시 우선 사용)
+  Future<void> _refreshHomeData() async {
+    final foodProvider = Provider.of<FoodProvider>(context, listen: false);
+
+    // 이미 캐시된 데이터가 있으면 불필요한 로드 방지
+    if (foodProvider.foodsForSelectedDate.isEmpty) {
+      await foodProvider.loadFoodsByDate(foodProvider.selectedDate);
+    }
+  }
+
+  Future<void> _loadUserData({bool forceRefresh = true}) async {
     // 사용자 로그인 상태 확인
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       try {
-        // 사용자 정보 로드
+        // 사용자 정보 로드 (변경이 있을 때만)
         await Provider.of<UserProvider>(context, listen: false).loadUser();
 
-        // 음식 데이터 로드
-        await Provider.of<FoodProvider>(context, listen: false).loadFoods();
+        // 최초 1회만 전체 데이터 로드, 이후에는 필요한 데이터만 로드
+        if (!_dataInitialized || forceRefresh) {
+          final foodProvider = Provider.of<FoodProvider>(
+            context,
+            listen: false,
+          );
+          await foodProvider.loadFoods();
+          _dataInitialized = true;
+        } else {
+          // 현재 선택된 날짜의 데이터만 갱신 (캐시 우선 사용)
+          if (_currentIndex == 0) {
+            _refreshHomeData();
+          }
+        }
       } catch (e) {
         print('데이터 로드 오류: $e');
       }
@@ -164,6 +212,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
           setState(() {
             _currentIndex = index;
           });
+
+          // 홈 탭으로 이동하면 데이터 갱신 (캐시 우선 사용)
+          if (index == 0) {
+            _refreshHomeData();
+          }
         },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: '홈'),

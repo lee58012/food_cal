@@ -6,7 +6,7 @@ import 'package:hoseo/utils/auth_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:convert';
-import 'package:flutter/services.dart';
+import 'package:hoseo/models/nutrition_recommendation.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -27,8 +27,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _medicalCondition = '정상';
   File? _imageFile;
   String? _currentPhotoUrl;
-  bool _isProfileComplete = true;
   bool _isLoading = false;
+  NutritionRecommendation? _nutritionRec;
+  User? _user;
 
   @override
   void initState() {
@@ -37,25 +38,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadUserData() async {
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    final user = userProvider.user;
-    if (user != null) {
-      setState(() {
-        _nameController.text = user.name;
-        _ageController.text = user.age.toString();
-        _weightController.text = user.weight.toString();
-        _heightController.text = user.height.toString();
-        _gender = user.gender;
-        _activityLevel = user.activityLevel;
-        _medicalCondition = user.medicalCondition;
-        _currentPhotoUrl = user.photoUrl;
+    setState(() {
+      _isLoading = true;
+    });
 
-        // 프로필이 기본값인지 확인
-        _isProfileComplete =
-            !(user.name == '사용자' &&
-                user.age == 30 &&
-                user.weight == 65.0 &&
-                user.height == 170.0);
+    try {
+      final userProvider = Provider.of<UserProvider>(context, listen: false);
+      await userProvider.loadUser();
+
+      final user = userProvider.user;
+      if (user != null) {
+        setState(() {
+          _nameController.text = user.name!;
+          _ageController.text = user.age.toString();
+          _weightController.text = user.weight.toString();
+          _heightController.text = user.height.toString();
+          _gender = user.gender;
+          _activityLevel = user.activityLevel;
+          _medicalCondition = user.medicalCondition;
+          _currentPhotoUrl = user.photoUrl;
+          _user = user;
+
+          // 영양소 권장량 계산
+          _nutritionRec = NutritionRecommendation.fromUser(user);
+        });
+      }
+    } finally {
+      setState(() {
+        _isLoading = false;
       });
     }
   }
@@ -65,9 +75,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final picker = ImagePicker();
       final pickedFile = await picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 400, // 이미지 크기 제한 (Firestore 문서 크기 제한 때문)
+        maxWidth: 400,
         maxHeight: 400,
-        imageQuality: 70, // 이미지 품질 조정
+        imageQuality: 70,
       );
 
       if (pickedFile != null) {
@@ -90,12 +100,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
 
     try {
-      // 이미지 파일을 바이트로 읽기
       final bytes = await _imageFile!.readAsBytes();
 
-      // 이미지 크기 확인 (1MB 제한)
       if (bytes.length > 1024 * 1024) {
-        // 이미지가 너무 크면 경고 표시
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('이미지 크기가 너무 큽니다. 더 작은 이미지를 선택해주세요.')),
         );
@@ -105,13 +112,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return _currentPhotoUrl;
       }
 
-      // 바이트를 Base64 문자열로 인코딩
       final base64String = base64Encode(bytes);
-
-      // Base64 문자열 앞에 데이터 형식 추가
       final dataUrl = 'data:image/jpeg;base64,$base64String';
-
-      print('이미지 인코딩 완료: ${dataUrl.length} 문자');
 
       setState(() {
         _isLoading = false;
@@ -123,7 +125,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _isLoading = false;
       });
 
-      print('이미지 처리 오류: $e');
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('이미지 처리 실패: $e')));
@@ -153,12 +154,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
         activityLevel: _activityLevel,
         photoUrl: photoUrl,
         medicalCondition: _medicalCondition,
+        targetCalories: _calculateTargetCalories().toDouble(),
       );
 
       if (!mounted) return;
 
+      // 저장 성공 후 상태 업데이트
       setState(() {
-        _isProfileComplete = true;
+        _currentPhotoUrl = photoUrl;
+        _imageFile = null; // 선택된 파일 초기화
+
+        // _user 객체도 업데이트
+        if (_user != null) {
+          _user = _user!.copyWith(photoUrl: photoUrl);
+        }
+
         _isLoading = false;
       });
 
@@ -197,51 +207,161 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _calculateTargetCalories() {
     double bmr;
 
-    // 입력값이 없거나 유효하지 않은 경우 기본값 사용
     double weight = double.tryParse(_weightController.text) ?? 65.0;
     double height = double.tryParse(_heightController.text) ?? 170.0;
     int age = int.tryParse(_ageController.text) ?? 30;
 
-    // 해리스-베네딕트 공식 사용
     if (_gender == '남성') {
-      bmr = 88.362 + (13.397 * weight) + (4.799 * height) - (5.677 * age);
+      bmr = (10 * weight) + (6.25 * height) - (5 * age) + 5;
     } else {
-      bmr = 447.593 + (9.247 * weight) + (3.098 * height) - (4.330 * age);
+      bmr = (10 * weight) + (6.25 * height) - (5 * age) - 161;
     }
 
-    // 활동 레벨에 따른 계수
     double activityFactor;
     switch (_activityLevel) {
       case 1:
         activityFactor = 1.2;
-        break; // 비활동적
+        break;
       case 2:
         activityFactor = 1.375;
-        break; // 가벼운 활동
+        break;
       case 3:
         activityFactor = 1.55;
-        break; // 중간 활동
+        break;
       case 4:
         activityFactor = 1.725;
-        break; // 활동적
+        break;
       case 5:
         activityFactor = 1.9;
-        break; // 매우 활동적
+        break;
       default:
         activityFactor = 1.375;
     }
 
-    // 건강 상태에 따른 조정
     double medicalFactor = 1.0;
     if (_medicalCondition == '당뇨') {
-      medicalFactor = 0.9; // 당뇨 환자는 일반적으로 10% 정도 칼로리 제한
+      medicalFactor = 0.9;
     } else if (_medicalCondition == '고혈압') {
-      medicalFactor = 0.95; // 고혈압 환자는 5% 정도 칼로리 제한
+      medicalFactor = 0.95;
     } else if (_medicalCondition == '고지혈증') {
-      medicalFactor = 0.9; // 고지혈증 환자는 10% 정도 칼로리 제한
+      medicalFactor = 0.9;
     }
 
     return (bmr * activityFactor * medicalFactor).round();
+  }
+
+  void _updateNutritionRecommendation() {
+    double weight = double.tryParse(_weightController.text) ?? 65.0;
+    double height = double.tryParse(_heightController.text) ?? 170.0;
+    int age = int.tryParse(_ageController.text) ?? 30;
+
+    final tempUser = User(
+      name: _nameController.text,
+      age: age,
+      weight: weight,
+      height: height,
+      gender: _gender,
+      activityLevel: _activityLevel,
+      targetCalories: _calculateTargetCalories().toDouble(),
+      medicalCondition: _medicalCondition,
+    );
+
+    setState(() {
+      _nutritionRec = NutritionRecommendation.fromUser(tempUser);
+    });
+  }
+
+  ImageProvider? _getProfileImage() {
+    // 새로 선택한 이미지가 있으면 우선 표시
+    if (_imageFile != null) {
+      return FileImage(_imageFile!);
+    }
+
+    // 기존 프로필 이미지가 있으면 표시
+    if (_currentPhotoUrl != null && _currentPhotoUrl!.isNotEmpty) {
+      // base64 데이터인지 확인
+      if (_currentPhotoUrl!.startsWith('data:image/')) {
+        // base64 데이터는 타임스탬프 없이 그대로 사용
+        try {
+          // data:image/jpeg;base64, 부분 제거
+          final base64String = _currentPhotoUrl!.split(',')[1];
+          final bytes = base64Decode(base64String);
+          return MemoryImage(bytes);
+        } catch (e) {
+          return null;
+        }
+      } else {
+        // 일반 URL인 경우에만 타임스탬프 추가
+        final imageUrl =
+            '$_currentPhotoUrl?t=${DateTime.now().millisecondsSinceEpoch}';
+        return NetworkImage(imageUrl);
+      }
+    }
+
+    // _user의 photoUrl도 확인
+    if (_user?.photoUrl != null && _user!.photoUrl!.isNotEmpty) {
+      if (_user!.photoUrl!.startsWith('data:image/')) {
+        // base64 데이터는 타임스탬프 없이 그대로 사용
+        try {
+          final base64String = _user!.photoUrl!.split(',')[1];
+          final bytes = base64Decode(base64String);
+          return MemoryImage(bytes);
+        } catch (e) {
+          return null;
+        }
+      } else {
+        // 일반 URL인 경우에만 타임스탬프 추가
+        final imageUrl =
+            '${_user!.photoUrl!}?t=${DateTime.now().millisecondsSinceEpoch}';
+        return NetworkImage(imageUrl);
+      }
+    }
+
+    return null;
+  }
+
+  Widget _buildNutrientCard(
+    String title,
+    double value,
+    String unit,
+    Color backgroundColor,
+    Color iconColor,
+  ) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Container(
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: iconColor,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${value.toStringAsFixed(1)} $unit',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: iconColor,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -271,60 +391,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (!_isProfileComplete) ...[
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.blue.shade200),
-                        ),
-                        child: const Column(
-                          children: [
-                            Text(
-                              '프로필 정보를 입력해주세요',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.blue,
-                              ),
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              '정확한 식단 관리를 위해 아래 정보를 입력해주세요.',
-                              style: TextStyle(color: Colors.blue),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-
-                    // 프로필 사진
+                    // 프로필 사진 (ImageHelper 사용으로 수정)
                     Center(
                       child: Stack(
                         children: [
                           CircleAvatar(
-                            radius: 60,
-                            backgroundImage: _imageFile != null
-                                ? FileImage(_imageFile!)
-                                : (_currentPhotoUrl != null &&
-                                      _currentPhotoUrl!.startsWith(
-                                        'data:image',
-                                      ))
-                                ? MemoryImage(
-                                    base64Decode(
-                                      _currentPhotoUrl!.split(',')[1],
-                                    ),
-                                  )
-                                : (_currentPhotoUrl != null)
-                                ? NetworkImage(_currentPhotoUrl!)
-                                : null as ImageProvider?,
-                            child:
-                                (_imageFile == null && _currentPhotoUrl == null)
-                                ? const Icon(Icons.person, size: 60)
+                            radius: 50,
+                            backgroundImage: _getProfileImage(),
+                            child: _getProfileImage() == null
+                                ? const Icon(Icons.person, size: 50)
                                 : null,
                           ),
+
                           Positioned(
                             bottom: 0,
                             right: 0,
@@ -380,6 +458,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         }
                         return null;
                       },
+                      onChanged: (_) => _updateNutritionRecommendation(),
                     ),
                     const SizedBox(height: 16),
 
@@ -401,6 +480,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         }
                         return null;
                       },
+                      onChanged: (_) => _updateNutritionRecommendation(),
                     ),
                     const SizedBox(height: 16),
 
@@ -422,6 +502,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         }
                         return null;
                       },
+                      onChanged: (_) => _updateNutritionRecommendation(),
                     ),
                     const SizedBox(height: 24),
 
@@ -443,6 +524,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onChanged: (value) {
                               setState(() {
                                 _gender = value!;
+                                _updateNutritionRecommendation();
                               });
                             },
                           ),
@@ -455,6 +537,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onChanged: (value) {
                               setState(() {
                                 _gender = value!;
+                                _updateNutritionRecommendation();
                               });
                             },
                           ),
@@ -482,6 +565,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onChanged: (value) {
                               setState(() {
                                 _medicalCondition = value!;
+                                _updateNutritionRecommendation();
                               });
                             },
                           ),
@@ -492,6 +576,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onChanged: (value) {
                               setState(() {
                                 _medicalCondition = value!;
+                                _updateNutritionRecommendation();
                               });
                             },
                           ),
@@ -502,6 +587,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onChanged: (value) {
                               setState(() {
                                 _medicalCondition = value!;
+                                _updateNutritionRecommendation();
                               });
                             },
                           ),
@@ -512,6 +598,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onChanged: (value) {
                               setState(() {
                                 _medicalCondition = value!;
+                                _updateNutritionRecommendation();
                               });
                             },
                           ),
@@ -540,6 +627,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onChanged: (value) {
                               setState(() {
                                 _activityLevel = value!;
+                                _updateNutritionRecommendation();
                               });
                             },
                           ),
@@ -551,6 +639,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onChanged: (value) {
                               setState(() {
                                 _activityLevel = value!;
+                                _updateNutritionRecommendation();
                               });
                             },
                           ),
@@ -562,6 +651,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onChanged: (value) {
                               setState(() {
                                 _activityLevel = value!;
+                                _updateNutritionRecommendation();
                               });
                             },
                           ),
@@ -573,6 +663,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onChanged: (value) {
                               setState(() {
                                 _activityLevel = value!;
+                                _updateNutritionRecommendation();
                               });
                             },
                           ),
@@ -584,6 +675,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             onChanged: (value) {
                               setState(() {
                                 _activityLevel = value!;
+                                _updateNutritionRecommendation();
                               });
                             },
                           ),
@@ -631,6 +723,134 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 24),
 
+                    // 권장 영양소 정보 (홈 화면과 동일한 스타일로 개선)
+                    if (_nutritionRec != null) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            '권장 영양소',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  size: 16,
+                                  color: Colors.blue.shade700,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '권장량 정보',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // 2x3 그리드 레이아웃으로 변경
+                      Column(
+                        children: [
+                          // 첫 번째 행: 탄수화물, 단백질
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildNutrientCard(
+                                  '탄수화물',
+                                  _nutritionRec!.recommendedCarbs,
+                                  'g',
+                                  Colors.orange.shade100,
+                                  Colors.orange,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _buildNutrientCard(
+                                  '단백질',
+                                  _nutritionRec!.recommendedProtein,
+                                  'g',
+                                  Colors.red.shade100,
+                                  Colors.red,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+
+                          // 두 번째 행: 지방, 당류
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildNutrientCard(
+                                  '지방',
+                                  _nutritionRec!.recommendedFat,
+                                  'g',
+                                  Colors.blue.shade100,
+                                  Colors.blue,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _buildNutrientCard(
+                                  '당류',
+                                  _nutritionRec!.recommendedSugar,
+                                  'g',
+                                  Colors.purple.shade100,
+                                  Colors.purple,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+
+                          // 세 번째 행: 나트륨, 콜레스테롤
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildNutrientCard(
+                                  '나트륨',
+                                  _nutritionRec!.recommendedSodium,
+                                  'mg',
+                                  Colors.green.shade100,
+                                  Colors.green,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _buildNutrientCard(
+                                  '콜레스테롤',
+                                  _nutritionRec!.recommendedCholesterol,
+                                  'mg',
+                                  Colors.teal.shade100,
+                                  Colors.teal,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+
                     // 저장 버튼
                     SizedBox(
                       width: double.infinity,
@@ -638,14 +858,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         onPressed: _saveProfile,
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 15),
-                          backgroundColor: !_isProfileComplete
-                              ? Colors.blue
-                              : Colors.green,
+                          backgroundColor: Colors.green,
                           foregroundColor: Colors.white,
                         ),
-                        child: Text(
-                          !_isProfileComplete ? '프로필 완성하기' : '프로필 저장',
-                          style: const TextStyle(
+                        child: const Text(
+                          '프로필 저장',
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),

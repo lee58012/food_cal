@@ -5,6 +5,9 @@ class Food {
   final double carbs;
   final double protein;
   final double fat;
+  final double sodium; // 나트륨 (mg)
+  final double cholesterol; // 콜레스테롤 (mg)
+  final double sugar; // 총당류 (g)
   final String? imageUrl;
   final DateTime dateTime;
 
@@ -15,6 +18,9 @@ class Food {
     required this.carbs,
     required this.protein,
     required this.fat,
+    this.sodium = 0,
+    this.cholesterol = 0,
+    this.sugar = 0,
     this.imageUrl,
     required this.dateTime,
   });
@@ -27,6 +33,9 @@ class Food {
       'carbs': carbs,
       'protein': protein,
       'fat': fat,
+      'sodium': sodium,
+      'cholesterol': cholesterol,
+      'sugar': sugar,
       'imageUrl': imageUrl,
       'dateTime': dateTime.toIso8601String(),
     };
@@ -40,6 +49,11 @@ class Food {
       carbs: (map['carbs'] as num).toDouble(),
       protein: (map['protein'] as num).toDouble(),
       fat: (map['fat'] as num).toDouble(),
+      sodium: map['sodium'] != null ? (map['sodium'] as num).toDouble() : 0,
+      cholesterol: map['cholesterol'] != null
+          ? (map['cholesterol'] as num).toDouble()
+          : 0,
+      sugar: map['sugar'] != null ? (map['sugar'] as num).toDouble() : 0,
       imageUrl: map['imageUrl'] as String?,
       dateTime: DateTime.parse(map['dateTime'] as String),
     );
@@ -58,6 +72,7 @@ class Food {
       'carbs': (carbs * 4) / totalCalories * 100,
       'protein': (protein * 4) / totalCalories * 100,
       'fat': (fat * 9) / totalCalories * 100,
+      'sugar': (sugar * 4) / totalCalories * 100,
     };
   }
 }

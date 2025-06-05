@@ -1,63 +1,87 @@
 class User {
   final int? id;
-  final String name;
+  final String? name;
+  final String? email;
+  final String? photoUrl;
+  final String? uid;
   final int age;
-  final double weight;
-  final double height;
   final String gender;
-  final int activityLevel; // 1-5 (낮음-높음)
-  final int targetCalories;
-  final String? uid; // Firebase 인증용
-  final String? email; // 사용자 이메일
-  final String? photoUrl; // 프로필 사진 URL
-  final String medicalCondition; // 정상, 당뇨, 고혈압, 고지혈증
+  final double height;
+  final double weight;
+  final int activityLevel;
+  final String medicalCondition;
+  final double? targetCalories;
 
-  User({
+  const User({
     this.id,
-    required this.name,
-    required this.age,
-    required this.weight,
-    required this.height,
-    required this.gender,
-    required this.activityLevel,
-    required this.targetCalories,
-    this.uid,
+    this.name,
     this.email,
     this.photoUrl,
+    this.uid,
+    required this.age,
+    required this.gender,
+    required this.height,
+    required this.weight,
+    required this.activityLevel,
     required this.medicalCondition,
+    this.targetCalories,
   });
+
+  factory User.fromMap(Map<String, dynamic> map) {
+    return User(
+      id: map['id'],
+      name: map['name'],
+      email: map['email'],
+      photoUrl: map['photoUrl'],
+      uid: map['uid'],
+      age: map['age'] ?? 25,
+      gender: map['gender'] ?? '남성',
+      height: (map['height'] ?? 170).toDouble(),
+      weight: (map['weight'] ?? 70).toDouble(),
+      activityLevel: map['activityLevel'] ?? 2,
+      medicalCondition: map['medicalCondition'] ?? '없음',
+      targetCalories: map['targetCalories']?.toDouble(),
+    );
+  }
 
   Map<String, dynamic> toMap() {
     return {
       'id': id,
       'name': name,
-      'age': age,
-      'weight': weight,
-      'height': height,
-      'gender': gender,
-      'activityLevel': activityLevel,
-      'targetCalories': targetCalories,
-      'uid': uid,
       'email': email,
       'photoUrl': photoUrl,
+      'uid': uid,
+      'age': age,
+      'gender': gender,
+      'height': height,
+      'weight': weight,
+      'activityLevel': activityLevel,
       'medicalCondition': medicalCondition,
+      'targetCalories': targetCalories,
     };
   }
 
-  factory User.fromMap(Map<String, dynamic> map) {
+  User copyWith({
+    String? name,
+    int? age,
+    double? weight,
+    double? height,
+    String? gender,
+    int? activityLevel,
+    String? photoUrl,
+    String? medicalCondition,
+    double? targetCalories,
+  }) {
     return User(
-      id: map['id'] as int?,
-      name: map['name'] as String,
-      age: map['age'] as int,
-      weight: (map['weight'] as num).toDouble(),
-      height: (map['height'] as num).toDouble(),
-      gender: map['gender'] as String,
-      activityLevel: map['activityLevel'] as int,
-      targetCalories: map['targetCalories'] as int,
-      uid: map['uid'] as String?,
-      email: map['email'] as String?,
-      photoUrl: map['photoUrl'] as String?,
-      medicalCondition: map['medicalCondition'] as String? ?? '정상',
+      name: name ?? this.name,
+      age: age ?? this.age,
+      weight: weight ?? this.weight,
+      height: height ?? this.height,
+      gender: gender ?? this.gender,
+      activityLevel: activityLevel ?? this.activityLevel,
+      photoUrl: photoUrl ?? this.photoUrl,
+      medicalCondition: medicalCondition ?? this.medicalCondition,
+      targetCalories: targetCalories ?? this.targetCalories,
     );
   }
 
@@ -66,12 +90,12 @@ class User {
     return weight / ((height / 100) * (height / 100));
   }
 
-  // 기초 대사량 계산 (해리스-베네딕트 공식)
+  // 기초 대사량 계산 (Mifflin-St Jeor 공식)
   double get bmr {
     if (gender == '남성') {
-      return 88.362 + (13.397 * weight) + (4.799 * height) - (5.677 * age);
+      return (10 * weight) + (6.25 * height) - (5 * age) + 5;
     } else {
-      return 447.593 + (9.247 * weight) + (3.098 * height) - (4.330 * age);
+      return (10 * weight) + (6.25 * height) - (5 * age) - 161;
     }
   }
 

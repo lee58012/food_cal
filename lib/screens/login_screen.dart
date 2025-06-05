@@ -1,3 +1,5 @@
+// ignore_for_file: unused_field, prefer_final_fields, avoid_print, use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hoseo/providers/user_provider.dart';
@@ -29,7 +31,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (currentUser != null) {
       print('[LoginScreen] 자동 로그인: ${currentUser.uid}');
       // 이미 로그인된 사용자가 있으면 홈 화면으로 이동
-      Navigator.of(context).pushReplacementNamed('/home');
+      Future.delayed(Duration.zero, () {
+        Navigator.of(context).pushReplacementNamed('/home');
+      });
     } else {
       print('[LoginScreen] 로그인된 사용자 없음');
     }
@@ -66,12 +70,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: ElevatedButton(
                   onPressed: () {
                     print('[LoginScreen] 로그인 버튼 클릭됨');
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const LoginFormScreen(),
-                      ),
-                    );
+                    Future.delayed(Duration.zero, () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const LoginFormScreen(),
+                        ),
+                      );
+                    });
                   },
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 15),
@@ -87,12 +93,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: OutlinedButton(
                   onPressed: () {
                     print('[LoginScreen] 회원가입 버튼 클릭됨');
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const SignUpFormScreen(),
-                      ),
-                    );
+                    Future.delayed(Duration.zero, () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const SignUpFormScreen(),
+                        ),
+                      );
+                    });
                   },
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 15),
@@ -162,7 +170,9 @@ class _LoginFormScreenState extends State<LoginFormScreen> {
       if (user != null && mounted) {
         print('[LoginFormScreen] 로그인 성공: ${user.uid}');
         await userProvider.loadUser();
-        Navigator.of(context).pushReplacementNamed('/home');
+        Future.delayed(Duration.zero, () {
+          Navigator.of(context).pushReplacementNamed('/home');
+        });
       } else {
         print('[LoginFormScreen] 로그인 실패: 사용자 정보 없음');
       }
@@ -265,11 +275,13 @@ class _LoginFormScreenState extends State<LoginFormScreen> {
               TextButton(
                 onPressed: () {
                   print('[LoginFormScreen] 회원가입 화면으로 이동');
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (context) => const SignUpFormScreen(),
-                    ),
-                  );
+                  Future.delayed(Duration.zero, () {
+                    Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(
+                        builder: (context) => const SignUpFormScreen(),
+                      ),
+                    );
+                  });
                 },
                 child: const Text('계정이 없으신가요? 회원가입'),
               ),
@@ -338,18 +350,20 @@ class _SignUpFormScreenState extends State<SignUpFormScreen> {
         print('[SignUpFormScreen] 회원가입 성공: ${user.uid}');
         await userProvider.saveUser(user);
         // 회원가입 후 프로필 탭으로 바로 이동
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => MainScreen(goToProfile: true),
-          ),
-        );
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('프로필 정보를 입력해주세요'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 5),
-          ),
-        );
+        Future.delayed(Duration.zero, () {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => MainScreen(goToProfile: true),
+            ),
+          );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('프로필 정보를 입력해주세요'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 5),
+            ),
+          );
+        });
       } else {
         print('[SignUpFormScreen] 회원가입 실패: 사용자 정보 없음');
       }
@@ -473,11 +487,13 @@ class _SignUpFormScreenState extends State<SignUpFormScreen> {
               TextButton(
                 onPressed: () {
                   print('[SignUpFormScreen] 로그인 화면으로 이동');
-                  Navigator.of(context).pushReplacement(
-                    MaterialPageRoute(
-                      builder: (context) => const LoginFormScreen(),
-                    ),
-                  );
+                  Future.delayed(Duration.zero, () {
+                    Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(
+                        builder: (context) => const LoginFormScreen(),
+                      ),
+                    );
+                  });
                 },
                 child: const Text('이미 계정이 있으신가요? 로그인'),
               ),

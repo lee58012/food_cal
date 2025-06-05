@@ -1,72 +1,52 @@
+// ignore_for_file: use_super_parameters
+
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 class CalorieChart extends StatelessWidget {
-  final int consumed;
-  final int target;
+  final double currentCalories;
+  final double targetCalories;
 
-  const CalorieChart({super.key, required this.consumed, required this.target});
+  const CalorieChart({
+    Key? key,
+    required this.currentCalories,
+    required this.targetCalories,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final percentage = target > 0
-        ? (consumed / target * 100).clamp(0, 100)
-        : 0.0;
+    final percentage = (currentCalories / targetCalories * 100).clamp(
+      0.0,
+      100.0,
+    );
 
-    return SizedBox(
-      height: 120,
-      child: Stack(
-        children: [
-          PieChart(
-            PieChartData(
-              sectionsSpace: 0,
-              centerSpaceRadius: 40,
-              sections: [
-                PieChartSectionData(
-                  value: percentage.toDouble(),
-                  color: _getColorForPercentage(percentage.toDouble()),
-                  radius: 20.0,
-                  title: '',
-                ),
-                PieChartSectionData(
-                  value: 100 - percentage.toDouble(),
-                  color: Colors.grey.shade300,
-                  radius: 20,
-                  title: '',
-                ),
-              ],
+    return AspectRatio(
+      aspectRatio: 2,
+      child: PieChart(
+        PieChartData(
+          sections: [
+            PieChartSectionData(
+              value: percentage,
+              color: Colors.orange,
+              radius: 40,
+              title: '${percentage.toStringAsFixed(1)}%',
+              titleStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
-          ),
-          Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  '${percentage.toInt()}%',
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  '$consumed / $target kcal',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
-          ),
-        ],
+            if (percentage < 100)
+              PieChartSectionData(
+                value: 100 - percentage,
+                color: Colors.grey.shade300,
+                radius: 40,
+              ),
+          ],
+          sectionsSpace: 0,
+          centerSpaceRadius: 30,
+        ),
       ),
     );
-  }
-
-  Color _getColorForPercentage(double percentage) {
-    if (percentage >= 100) {
-      return Colors.red;
-    } else if (percentage >= 80) {
-      return Colors.orange;
-    } else {
-      return Colors.green;
-    }
   }
 }

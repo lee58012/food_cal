@@ -1,13 +1,17 @@
+// ignore_for_file: avoid_print, use_rethrow_when_possible, depend_on_referenced_packages
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hoseo/models/user.dart';
 import 'package:hoseo/utils/database_helper.dart';
 import 'package:hoseo/utils/firestore_service.dart';
 import 'package:firebase_auth/firebase_auth.dart' as auth;
+import 'package:flutter/foundation.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class UserProvider with ChangeNotifier {
   User? _user;
-  bool _isFirstTime = true;
+  bool _isFirstTime = false;
   bool _isLoggedIn = false;
   final FirestoreService _firestoreService = FirestoreService();
 
@@ -17,97 +21,51 @@ class UserProvider with ChangeNotifier {
 
   // 앱 시작 시 사용자 정보 로드
   Future<void> loadUser() async {
-    print('사용자 정보 로드 시작');
-    final dbHelper = DatabaseHelper();
-    final userData = await dbHelper.getUser();
-
-    // Firebase 인증 상태 확인
-    final currentUser = auth.FirebaseAuth.instance.currentUser;
-    if (currentUser == null) {
-      print('Firebase 인증 사용자 없음');
-      _isLoggedIn = false;
-      notifyListeners();
-      return;
-    }
-
-    print('Firebase 인증 사용자 발견: ${currentUser.uid}');
-    _isLoggedIn = true;
-
     try {
-      // Firestore에서 최신 데이터 로드 시도
-      final firestoreData = await _firestoreService.getUserProfile(
-        currentUser.uid,
-      );
+      final currentUser = auth.FirebaseAuth.instance.currentUser;
+      if (currentUser != null) {
+        final doc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .get();
 
-      if (firestoreData != null) {
-        print('Firestore에서 사용자 데이터 로드 성공');
-        // Firestore 데이터가 있으면 로컬 DB 업데이트
-        final updatedUser = User(
-          id: userData.isNotEmpty ? userData.first['id'] : 0,
-          name: firestoreData['name'] ?? '사용자',
-          age: firestoreData['age'] ?? 30,
-          weight: firestoreData['weight'] ?? 65.0,
-          height: firestoreData['height'] ?? 170.0,
-          gender: firestoreData['gender'] ?? '남성',
-          activityLevel: firestoreData['activityLevel'] ?? 2,
-          targetCalories: firestoreData['targetCalories'] ?? 2000,
-          email: firestoreData['email'] ?? currentUser.email,
-          photoUrl: firestoreData['photoUrl'],
-          uid: currentUser.uid,
-          medicalCondition: firestoreData['medicalCondition'] ?? '정상',
-        );
-
-        _user = updatedUser;
-        _isFirstTime = false;
-
-        // 로컬 DB 업데이트
-        if (userData.isEmpty) {
-          await dbHelper.insertUser(updatedUser.toMap());
+        if (doc.exists) {
+          final userData = doc.data()!;
+          _user = User(
+            uid: currentUser.uid,
+            email: currentUser.email,
+            name: userData['name'] ?? '사용자',
+            photoUrl: userData['photoUrl'] ?? currentUser.photoURL,
+            age: userData['age'] ?? 25,
+            gender: userData['gender'] ?? '남성',
+            height: (userData['height'] ?? 170).toDouble(),
+            weight: (userData['weight'] ?? 65).toDouble(),
+            activityLevel: userData['activityLevel'] ?? 2,
+            medicalCondition: userData['medicalCondition'] ?? '정상',
+            targetCalories: userData['targetCalories']?.toDouble(),
+          );
+          notifyListeners();
         } else {
-          await dbHelper.updateUser(updatedUser.toMap());
+          // 새 사용자인 경우
+          _isFirstTime = true;
+          _user = User(
+            uid: currentUser.uid,
+            email: currentUser.email,
+            name: currentUser.displayName ?? '사용자',
+            photoUrl: currentUser.photoURL,
+            age: 25,
+            gender: '남성',
+            height: 170,
+            weight: 65,
+            activityLevel: 2,
+            medicalCondition: '정상',
+          );
+          notifyListeners();
         }
-      } else if (userData.isNotEmpty) {
-        print('로컬 DB에서 사용자 데이터 로드');
-        // Firestore에 데이터가 없지만 로컬 DB에 있는 경우
-        _user = User.fromMap(userData.first);
-        _isFirstTime = false;
-
-        // 로컬 데이터를 Firestore에 동기화
-        if (_user!.uid == currentUser.uid) {
-          await _firestoreService.saveUserProfile(_user!);
-          print('로컬 데이터를 Firestore에 동기화 완료');
-        }
-      } else {
-        print('새 사용자 생성');
-        // 둘 다 없는 경우 기본 사용자 생성
-        final newUser = User(
-          name: currentUser.displayName ?? '사용자',
-          age: 30,
-          weight: 65.0,
-          height: 170.0,
-          gender: '남성',
-          activityLevel: 2,
-          targetCalories: 2000,
-          email: currentUser.email,
-          photoUrl: currentUser.photoURL,
-          uid: currentUser.uid,
-          medicalCondition: '정상',
-        );
-
-        await saveUser(newUser);
-        _isFirstTime = true;
       }
     } catch (e) {
       print('사용자 정보 로드 오류: $e');
-
-      if (userData.isNotEmpty) {
-        // 오류 발생 시 로컬 데이터 사용
-        _user = User.fromMap(userData.first);
-        _isFirstTime = false;
-      }
     }
-
-    notifyListeners();
   }
 
   // 사용자 정보 저장
@@ -224,6 +182,7 @@ class UserProvider with ChangeNotifier {
     required int activityLevel,
     String? photoUrl,
     required String medicalCondition,
+    required double targetCalories,
   }) async {
     if (_user == null) return;
 
@@ -233,6 +192,7 @@ class UserProvider with ChangeNotifier {
       weight: weight,
       height: height,
       activityLevel: activityLevel,
+      medicalCondition: medicalCondition,
     );
 
     final updatedUser = User(
@@ -243,7 +203,7 @@ class UserProvider with ChangeNotifier {
       height: height,
       gender: gender,
       activityLevel: activityLevel,
-      targetCalories: targetCalories,
+      targetCalories: targetCalories.toDouble(),
       email: _user!.email,
       photoUrl: photoUrl ?? _user!.photoUrl,
       uid: _user!.uid,
@@ -251,6 +211,9 @@ class UserProvider with ChangeNotifier {
     );
 
     await saveUser(updatedUser);
+
+    // 프로필 업데이트 후 알림
+    notifyListeners();
   }
 
   int _calculateTargetCalories({
@@ -259,12 +222,13 @@ class UserProvider with ChangeNotifier {
     required double weight,
     required double height,
     required int activityLevel,
+    required String medicalCondition,
   }) {
     double bmr;
     if (gender == '남성') {
-      bmr = 88.362 + (13.397 * weight) + (4.799 * height) - (5.677 * age);
+      bmr = (10 * weight) + (6.25 * height) - (5 * age) + 5;
     } else {
-      bmr = 447.593 + (9.247 * weight) + (3.098 * height) - (4.330 * age);
+      bmr = (10 * weight) + (6.25 * height) - (5 * age) - 161;
     }
 
     // 활동 레벨에 따른 계수
@@ -289,6 +253,16 @@ class UserProvider with ChangeNotifier {
         activityFactor = 1.375;
     }
 
-    return (bmr * activityFactor).round();
+    // 건강 상태에 따른 조정
+    double medicalFactor = 1.0;
+    if (medicalCondition == '당뇨') {
+      medicalFactor = 0.9; // 당뇨 환자는 일반적으로 10% 정도 칼로리 제한
+    } else if (medicalCondition == '고혈압') {
+      medicalFactor = 0.95; // 고혈압 환자는 5% 정도 칼로리 제한
+    } else if (medicalCondition == '고지혈증') {
+      medicalFactor = 0.9; // 고지혈증 환자는 10% 정도 칼로리 제한
+    }
+
+    return (bmr * activityFactor * medicalFactor).round();
   }
 }

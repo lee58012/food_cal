@@ -1,3 +1,5 @@
+// ignore_for_file: unused_import, strict_top_level_inference, avoid_print
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 // import 'package:google_sign_in/google_sign_in.dart';
