@@ -666,59 +666,77 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         ),
                       ),
                     )
-                  : ListView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: foodProvider.foodsForSelectedDate.length,
-                      itemBuilder: (context, index) {
-                        final food = foodProvider.foodsForSelectedDate[index];
-                        return FoodListItem(
-                          food: food,
-                          onTap: () {
-                            Navigator.pushNamed(
-                              context,
-                              '/food_detail',
-                              arguments: food,
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '총 ${foodProvider.foodsForSelectedDate.length}개의 식단',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: foodProvider.foodsForSelectedDate.length,
+                          itemBuilder: (context, index) {
+                            final food =
+                                foodProvider.foodsForSelectedDate[index];
+                            return FoodListItem(
+                              food: food,
+                              onTap: () {
+                                Navigator.pushNamed(
+                                  context,
+                                  '/food_detail',
+                                  arguments: food,
+                                );
+                              },
+                              onDelete: () async {
+                                if (food.id != null) {
+                                  try {
+                                    await foodProvider.deleteFood(food.id!);
+
+                                    // 삭제 후 즉시 칼로리 업데이트
+                                    if (mounted) {
+                                      final newCalories = foodProvider
+                                          .totalCaloriesForSelectedDate;
+                                      setState(() {
+                                        _currentCalories = newCalories;
+                                      });
+                                    }
+
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            '${food.name}이(가) 삭제되었습니다.',
+                                          ),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text('삭제 중 오류가 발생했습니다: $e'),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                }
+                              },
                             );
                           },
-                          onDelete: () async {
-                            if (food.id != null) {
-                              try {
-                                await foodProvider.deleteFood(food.id!);
-
-                                // 삭제 후 즉시 칼로리 업데이트
-                                if (mounted) {
-                                  final newCalories =
-                                      foodProvider.totalCaloriesForSelectedDate;
-                                  setState(() {
-                                    _currentCalories = newCalories;
-                                  });
-                                }
-
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        '${food.name}이(가) 삭제되었습니다.',
-                                      ),
-                                      backgroundColor: Colors.green,
-                                    ),
-                                  );
-                                }
-                              } catch (e) {
-                                if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('삭제 중 오류가 발생했습니다.'),
-                                      backgroundColor: Colors.red,
-                                    ),
-                                  );
-                                }
-                              }
-                            }
-                          },
-                        );
-                      },
+                        ),
+                      ],
                     ),
             ],
           ),

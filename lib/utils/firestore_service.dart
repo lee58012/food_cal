@@ -242,15 +242,48 @@ class FirestoreService {
 
         final calorieDoc = await transaction.get(calorieDocRef);
 
-        // 쓰기 작업
-        // 음식 문서 삭제
-        final foodDocRef = _firestore
+        // 먼저 해당 ID로 음식 문서 찾기
+        final foodsQuery = await _firestore
             .collection('users')
             .doc(uid)
             .collection('foods')
-            .doc(foodId);
+            .where(FieldPath.documentId, isEqualTo: foodId)
+            .get();
 
-        transaction.delete(foodDocRef);
+        // 음식 문서가 없으면 ID로 직접 조회
+        if (foodsQuery.docs.isEmpty) {
+          // 모든 음식 문서 조회
+          final allFoodsQuery = await _firestore
+              .collection('users')
+              .doc(uid)
+              .collection('foods')
+              .get();
+
+          // 로그 출력
+          print('Firestore에서 삭제할 음식 ID: $foodId');
+          print('조회된 전체 음식 문서 수: ${allFoodsQuery.docs.length}');
+
+          // 일치하는 문서 찾기
+          bool foodFound = false;
+          for (var doc in allFoodsQuery.docs) {
+            print('문서 ID: ${doc.id}, 음식명: ${doc.data()['name']}');
+            if (doc.id == foodId) {
+              transaction.delete(doc.reference);
+              foodFound = true;
+              print('일치하는 음식 문서를 찾아 삭제합니다: ${doc.id}');
+              break;
+            }
+          }
+
+          if (!foodFound) {
+            print('삭제할 음식 문서를 찾을 수 없습니다: $foodId');
+            // 그래도 일일 칼로리는 업데이트
+          }
+        } else {
+          // 음식 문서 삭제
+          transaction.delete(foodsQuery.docs.first.reference);
+          print('음식 문서 삭제 완료: $foodId');
+        }
 
         // 일일 칼로리 업데이트
         if (calorieDoc.exists) {

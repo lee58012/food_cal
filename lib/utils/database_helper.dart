@@ -2,6 +2,7 @@
 
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -13,6 +14,11 @@ class DatabaseHelper {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
+
+    // 웹 환경인 경우 예외 처리
+    if (kIsWeb) {
+      throw UnsupportedError('웹 환경에서는 SQLite를 사용할 수 없습니다.');
+    }
 
     // 데이터베이스 초기화
     _database = await _initDatabase();
@@ -225,6 +231,28 @@ class DatabaseHelper {
   // 음식 CRUD 메서드
   Future<int> insertFood(Map<String, dynamic> food) async {
     final db = await database;
+
+    // 중복 확인을 위해 동일한 날짜와 이름을 가진 음식이 있는지 확인
+    final dateTime = food['dateTime'] as String;
+    final name = food['name'] as String;
+
+    // 날짜의 시작 부분만 비교 (yyyy-MM-dd)
+    final dateOnly = dateTime.split('T')[0];
+
+    final duplicates = await db.query(
+      'foods',
+      where: 'dateTime LIKE ? AND name = ?',
+      whereArgs: ['$dateOnly%', name],
+    );
+
+    if (duplicates.isNotEmpty) {
+      print('중복된 음식 데이터 발견: $name, 날짜: $dateOnly');
+      // 이미 존재하는 항목의 ID 반환
+      return duplicates.first['id'] as int;
+    }
+
+    // 중복이 없으면 새로 삽입
+    print('새로운 음식 데이터 삽입: $name, 날짜: $dateOnly');
     return await db.insert('foods', food);
   }
 
@@ -266,6 +294,26 @@ class DatabaseHelper {
       where: 'dateTime LIKE ?',
       whereArgs: ['$date%'],
     );
+  }
+
+  // 특정 날짜의 음식 데이터 삭제 전 조회
+  Future<List<Map<String, dynamic>>> getFoodsAndDeleteByDate(
+    String date,
+  ) async {
+    final db = await database;
+
+    // 먼저 해당 날짜의 음식 데이터 조회
+    final foods = await db.query(
+      'foods',
+      where: 'dateTime LIKE ?',
+      whereArgs: ['$date%'],
+    );
+
+    // 조회 후 삭제
+    await db.delete('foods', where: 'dateTime LIKE ?', whereArgs: ['$date%']);
+
+    print('날짜 $date의 ${foods.length}개 음식 데이터 삭제');
+    return foods;
   }
 
   // 모든 음식 데이터 삭제

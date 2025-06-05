@@ -15,6 +15,7 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:hoseo/utils/database_helper.dart';
 import 'package:sqflite/sqflite.dart';
 import 'firebase_options.dart';
+import 'package:flutter/foundation.dart';
 
 // 전역 키 정의
 final GlobalKey<_MainScreenState> mainScreenKey = GlobalKey<_MainScreenState>();
@@ -22,8 +23,26 @@ final GlobalKey<_MainScreenState> mainScreenKey = GlobalKey<_MainScreenState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // SQLite 데이터베이스 설정
-  databaseFactory = databaseFactory;
+  // SQLite 데이터베이스 설정 - 플랫폼 확인 추가
+  try {
+    // 웹 환경이 아닐 때만 SQLite 초기화
+    if (!kIsWeb) {
+      databaseFactory = databaseFactory;
+
+      // 데이터베이스 초기화 확인
+      try {
+        final dbHelper = DatabaseHelper();
+        await dbHelper.database; // 이 부분으로 데이터베이스를 미리 초기화합니다
+        print('데이터베이스 초기화 성공!');
+      } catch (e) {
+        print('데이터베이스 초기화 오류: $e');
+      }
+    } else {
+      print('웹 환경에서는 SQLite를 사용하지 않습니다.');
+    }
+  } catch (e) {
+    print('데이터베이스 설정 오류: $e');
+  }
 
   try {
     // Firebase 초기화
@@ -35,15 +54,6 @@ void main() async {
       appleProvider: AppleProvider.appAttest,
     );
     print('Firebase 초기화 성공');
-
-    // 데이터베이스 초기화 확인
-    try {
-      final dbHelper = DatabaseHelper();
-      await dbHelper.database; // 이 부분으로 데이터베이스를 미리 초기화합니다
-      print('데이터베이스 초기화 성공!');
-    } catch (e) {
-      print('데이터베이스 초기화 오류: $e');
-    }
   } catch (e) {
     print('Firebase 초기화 실패: $e');
   }
