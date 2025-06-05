@@ -102,9 +102,6 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
                   _buildNutrientInfo('콜레스테롤', '${food.cholesterol} mg'),
 
                   const SizedBox(height: 30),
-
-                  // 운동 권장
-                  _buildExerciseRecommendation(food.calories),
                 ],
               ),
             ),
@@ -126,45 +123,6 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildExerciseRecommendation(int calories) {
-    return Card(
-      elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '소모하려면 필요한 운동량',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            _buildExerciseItem(
-              icon: Icons.directions_walk,
-              activity: '걷기',
-              duration: _calculateExerciseTime(calories, 5),
-            ),
-            _buildExerciseItem(
-              icon: Icons.directions_run,
-              activity: '조깅',
-              duration: _calculateExerciseTime(calories, 8),
-            ),
-            _buildExerciseItem(
-              icon: Icons.directions_bike,
-              activity: '자전거',
-              duration: _calculateExerciseTime(calories, 7),
-            ),
-            _buildExerciseItem(
-              icon: Icons.pool,
-              activity: '수영',
-              duration: _calculateExerciseTime(calories, 10),
-            ),
-          ],
-        ),
       ),
     );
   }
