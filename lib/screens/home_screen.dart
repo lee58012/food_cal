@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:hoseo/providers/user_provider.dart';
 import 'package:hoseo/providers/food_provider.dart';
 import 'package:hoseo/widgets/calorie_chart.dart';
-import 'package:hoseo/widgets/nutrient_card.dart';
 import 'package:hoseo/widgets/food_list_item.dart';
 import 'package:intl/intl.dart';
 import 'package:hoseo/main.dart';
@@ -27,7 +26,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   StreamSubscription? _foodsSubscription;
   StreamSubscription? _userSubscription;
   DateTime _lastSelectedDate = DateTime.now();
-  bool _isInitialized = false;
 
   @override
   void initState() {
@@ -73,8 +71,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           .listen(
             (snapshot) async {
               if (mounted) {
-                print('Firestore 변경 감지: ${snapshot.docs.length}개 문서');
-
                 // 디바운싱을 위한 지연 추가
                 await Future.delayed(const Duration(milliseconds: 200));
 
@@ -89,9 +85,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 }
               }
             },
-            onError: (error) {
-              print('StreamSubscription 오류: $error');
-            },
+            onError: (error) {},
             cancelOnError: false,
           );
     }
@@ -114,9 +108,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     try {
       await Provider.of<UserProvider>(context, listen: false).loadUser();
-      await Provider.of<FoodProvider>(context, listen: false).initialize();
+
+      // 전체 데이터를 로드하도록 수정
+      final foodProvider = Provider.of<FoodProvider>(context, listen: false);
+      await foodProvider.loadFoods();
+
+      // 현재 선택된 날짜의 데이터도 함께 로드
+      await foodProvider.loadFoodsByDate(foodProvider.selectedDate);
+
       await _updateCalorieData();
-      _isInitialized = true;
     } catch (e) {
       debugPrint('데이터 로드 오류: $e');
     } finally {
@@ -128,7 +128,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  // 조건부 setState로 불필요한 업데이트 방지
+  // 수정된 _updateCalorieData 메서드
   Future<void> _updateCalorieData() async {
     if (!mounted) return;
 
@@ -141,21 +141,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _lastSelectedDate = foodProvider.selectedDate;
       }
 
-      // 로컬에서 계산된 칼로리 사용
+      // 캐시된 칼로리 데이터 사용 - double 타입으로 변경
       final localCalories = foodProvider.totalCaloriesForSelectedDate;
 
       // 값이 실제로 변경된 경우에만 setState 호출
-      if (_currentCalories != localCalories.toDouble()) {
+      if (_currentCalories != localCalories) {
         if (mounted) {
           setState(() {
-            _currentCalories = localCalories.toDouble();
+            _currentCalories = localCalories;
           });
         }
-        print('칼로리 업데이트: $_currentCalories kcal');
       }
     } catch (e) {
-      print('칼로리 데이터 업데이트 오류: $e');
-
       // 오류 발생 시에도 값이 다른 경우에만 setState
       if (mounted && _currentCalories != 0.0) {
         setState(() {
@@ -320,7 +317,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 24),
 
-              // 칼로리 요약 카드
+              // 칼로리 요약 카드 - 수정된 부분
               RepaintBoundary(
                 child: Card(
                   elevation: 4,
@@ -379,10 +376,29 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               totalCalories,
                               Colors.orange,
                             ),
-                            _buildCalorieInfo(
-                              '남음',
-                              remainingCalories,
-                              remainingCalories < 0 ? Colors.red : Colors.green,
+                            Column(
+                              children: [
+                                Text(
+                                  '남음',
+                                  style: TextStyle(
+                                    color: remainingCalories < 0
+                                        ? Colors.red
+                                        : Colors.green,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Text(
+                                  '${remainingCalories.toStringAsFixed(1)} kcal',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: remainingCalories < 0
+                                        ? Colors.red
+                                        : Colors.green,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -466,7 +482,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
               const SizedBox(height: 20),
 
-              // 영양소 정보 - 목표량 대비 진행률 표시
+              // 영양소 정보 - 간단한 카드로 교체
               RepaintBoundary(
                 child: Column(
                   children: [
@@ -512,39 +528,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 12),
 
-                    // 영양소 카드들 - 목표량 대비 진행률 포함
+                    // 영양소 카드들을 간단한 Card로 교체
                     Column(
                       children: [
                         // 첫 번째 행: 탄수화물, 단백질
                         Row(
                           children: [
                             Expanded(
-                              child: NutrientCard(
-                                title: '탄수화물',
-                                value: foodProvider.totalCarbsForSelectedDate
-                                    .toDouble(),
-                                unit: 'g',
-                                color: Colors.orange.shade100,
-                                iconColor: Colors.orange,
-                                targetValue: _getTargetCarbs(
-                                  userProvider,
-                                ).toDouble(),
-                                showProgress: true,
+                              child: _buildSimpleNutrientCard(
+                                '탄수화물',
+                                foodProvider.totalCarbsForSelectedDate,
+                                'g',
+                                Colors.orange.shade100,
+                                Colors.orange,
+                                _getTargetCarbs(userProvider),
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: NutrientCard(
-                                title: '단백질',
-                                value: foodProvider.totalProteinForSelectedDate
-                                    .toDouble(),
-                                unit: 'g',
-                                color: Colors.red.shade100,
-                                iconColor: Colors.red,
-                                targetValue: _getTargetProtein(
-                                  userProvider,
-                                ).toDouble(),
-                                showProgress: true,
+                              child: _buildSimpleNutrientCard(
+                                '단백질',
+                                foodProvider.totalProteinForSelectedDate,
+                                'g',
+                                Colors.red.shade100,
+                                Colors.red,
+                                _getTargetProtein(userProvider),
                               ),
                             ),
                           ],
@@ -555,30 +563,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         Row(
                           children: [
                             Expanded(
-                              child: NutrientCard(
-                                title: '지방',
-                                value: foodProvider.totalFatForSelectedDate
-                                    .toDouble(),
-                                unit: 'g',
-                                color: Colors.blue.shade100,
-                                iconColor: Colors.blue,
-                                targetValue: _getTargetFat(
-                                  userProvider,
-                                ).toDouble(),
-                                showProgress: true,
+                              child: _buildSimpleNutrientCard(
+                                '지방',
+                                foodProvider.totalFatForSelectedDate,
+                                'g',
+                                Colors.blue.shade100,
+                                Colors.blue,
+                                _getTargetFat(userProvider),
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: NutrientCard(
-                                title: '당류',
-                                value: foodProvider.totalSugarForSelectedDate
-                                    .toDouble(),
-                                unit: 'g',
-                                color: Colors.purple.shade100,
-                                iconColor: Colors.purple,
-                                targetValue: 50.0, // 일반적인 당류 권장량
-                                showProgress: true,
+                              child: _buildSimpleNutrientCard(
+                                '당류',
+                                foodProvider.totalSugarForSelectedDate,
+                                'g',
+                                Colors.purple.shade100,
+                                Colors.purple,
+                                50.0,
                               ),
                             ),
                           ],
@@ -589,29 +591,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         Row(
                           children: [
                             Expanded(
-                              child: NutrientCard(
-                                title: '나트륨',
-                                value: foodProvider.totalSodiumForSelectedDate
-                                    .toDouble(),
-                                unit: 'mg',
-                                color: Colors.green.shade100,
-                                iconColor: Colors.green,
-                                targetValue: 2300.0, // 나트륨 권장량 (mg)
-                                showProgress: true,
+                              child: _buildSimpleNutrientCard(
+                                '나트륨',
+                                foodProvider.totalSodiumForSelectedDate,
+                                'mg',
+                                Colors.green.shade100,
+                                Colors.green,
+                                2300.0,
                               ),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: NutrientCard(
-                                title: '콜레스테롤',
-                                value: foodProvider
-                                    .totalCholesterolForSelectedDate
-                                    .toDouble(),
-                                unit: 'mg',
-                                color: Colors.teal.shade100,
-                                iconColor: Colors.teal,
-                                targetValue: 300.0, // 콜레스테롤 권장량 (mg)
-                                showProgress: true,
+                              child: _buildSimpleNutrientCard(
+                                '콜레스테롤',
+                                foodProvider.totalCholesterolForSelectedDate,
+                                'mg',
+                                Colors.teal.shade100,
+                                Colors.teal,
+                                300.0,
                               ),
                             ),
                           ],
@@ -691,9 +688,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
                                 // 삭제 후 즉시 칼로리 업데이트
                                 if (mounted) {
-                                  final newCalories = foodProvider
-                                      .totalCaloriesForSelectedDate
-                                      .toDouble();
+                                  final newCalories =
+                                      foodProvider.totalCaloriesForSelectedDate;
                                   setState(() {
                                     _currentCalories = newCalories;
                                   });
@@ -710,7 +706,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                   );
                                 }
                               } catch (e) {
-                                print('삭제 중 오류: $e');
                                 if (mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
@@ -736,18 +731,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return ImageHelper.getImageProvider(photoUrl);
   }
 
+  // 수정된 _buildCalorieInfo 메서드
   Widget _buildCalorieInfo(String label, double value, Color color) {
     return Column(
       children: [
         Text(label, style: TextStyle(color: color)),
         const SizedBox(height: 5),
         Text(
-          '${value.toInt()} kcal',
+          '${value.toStringAsFixed(1)} kcal',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
             color: color,
           ),
+          textAlign: TextAlign.center,
         ),
       ],
     );
@@ -760,6 +757,77 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         const SizedBox(height: 4),
         Text(text, style: const TextStyle(fontSize: 12)),
       ],
+    );
+  }
+
+  // 간단한 영양소 카드 위젯
+  Widget _buildSimpleNutrientCard(
+    String title,
+    double value,
+    String unit,
+    Color backgroundColor,
+    Color iconColor,
+    double targetValue,
+  ) {
+    final percentage = targetValue > 0 ? (value / targetValue * 100) : 0.0;
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Container(
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.circle, size: 12, color: iconColor),
+                const SizedBox(width: 4),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${value.toStringAsFixed(1)} $unit',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: iconColor,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '목표: ${targetValue.toStringAsFixed(1)} $unit',
+              style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(
+              value: (percentage / 100).clamp(0.0, 1.0),
+              backgroundColor: Colors.grey.shade300,
+              valueColor: AlwaysStoppedAnimation<Color>(iconColor),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${percentage.toStringAsFixed(1)}%',
+              style: TextStyle(
+                fontSize: 10,
+                color: iconColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -783,125 +851,4 @@ class CalorieStatus {
   final Color color;
 
   CalorieStatus(this.message, this.color);
-}
-
-// 수정된 NutrientCard 위젯
-class NutrientCard extends StatelessWidget {
-  final String title;
-  final double value;
-  final String unit;
-  final Color? color;
-  final Color? iconColor;
-  final double? targetValue;
-  final bool showProgress;
-
-  const NutrientCard({
-    Key? key,
-    required this.title,
-    required this.value,
-    required this.unit,
-    this.color,
-    this.iconColor,
-    this.targetValue,
-    this.showProgress = false,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    final percentage = targetValue != null && targetValue! > 0
-        ? (value / targetValue! * 100).clamp(0, 999)
-        : 0.0;
-
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Container(
-        decoration: BoxDecoration(
-          color: color ?? Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: iconColor ?? Colors.grey.shade700,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 6),
-
-            // 현재 값 표시
-            Text(
-              '${value.toStringAsFixed(1)} $unit',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                color: iconColor ?? Colors.grey.shade800,
-              ),
-              textAlign: TextAlign.center,
-            ),
-
-            // 목표량과 진행률 표시
-            if (showProgress && targetValue != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                '목표: ${targetValue!.toStringAsFixed(0)} $unit',
-                style: TextStyle(fontSize: 10, color: Colors.grey.shade600),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 6),
-
-              // 진행률 바
-              Container(
-                height: 6,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(3),
-                ),
-                child: FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: (percentage / 100).clamp(0.0, 1.0),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: _getProgressColor(percentage.toDouble()),
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 4),
-
-              // 퍼센트 표시
-              Text(
-                '${percentage.toStringAsFixed(0)}%',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: _getProgressColor(percentage.toDouble()),
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Color _getProgressColor(double percentage) {
-    if (percentage < 50) {
-      return Colors.red;
-    } else if (percentage < 80) {
-      return Colors.orange;
-    } else if (percentage <= 100) {
-      return Colors.green;
-    } else {
-      return Colors.red;
-    }
-  }
 }

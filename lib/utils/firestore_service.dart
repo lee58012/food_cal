@@ -170,6 +170,9 @@ class FirestoreService {
   // 음식 데이터 가져오기
   Future<List<Food>> getFoods(String uid) async {
     try {
+      print('Firestore에서 전체 음식 데이터 로드 시작');
+
+      // 전체 데이터를 한 번에 가져오기
       final snapshot = await _firestore
           .collection('users')
           .doc(uid)
@@ -177,7 +180,7 @@ class FirestoreService {
           .orderBy('dateTime', descending: true)
           .get();
 
-      return snapshot.docs.map((doc) {
+      final foods = snapshot.docs.map((doc) {
         final data = doc.data();
         return Food(
           id: int.tryParse(doc.id) ?? 0,
@@ -193,6 +196,9 @@ class FirestoreService {
           dateTime: DateTime.parse(data['dateTime']),
         );
       }).toList();
+
+      print('Firestore 데이터 로드 완료: ${foods.length}개');
+      return foods;
     } catch (e) {
       print('Firestore 음식 데이터 조회 오류: $e');
       throw e;
@@ -346,6 +352,7 @@ class FirestoreService {
     try {
       final dateFormat = DateFormat('yyyy-MM-dd');
       final dateStr = dateFormat.format(date);
+      print('특정 날짜($dateStr) 음식 데이터 로드 시작');
 
       // 해당 날짜의 시작과 끝 설정
       final startDate = DateTime.parse('${dateStr}T00:00:00');
@@ -363,7 +370,7 @@ class FirestoreService {
           .orderBy('dateTime', descending: true)
           .get();
 
-      return snapshot.docs.map((doc) {
+      final foods = snapshot.docs.map((doc) {
         final data = doc.data();
         return Food(
           id: int.tryParse(doc.id) ?? 0,
@@ -379,6 +386,9 @@ class FirestoreService {
           dateTime: DateTime.parse(data['dateTime']),
         );
       }).toList();
+
+      print('특정 날짜 데이터 로드 완료: ${foods.length}개');
+      return foods;
     } catch (e) {
       print('Firestore 특정 날짜 음식 데이터 조회 오류: $e');
       throw e;

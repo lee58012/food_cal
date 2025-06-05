@@ -15,37 +15,65 @@ class CalorieChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final percentage = (currentCalories / targetCalories * 100).clamp(
-      0.0,
-      100.0,
-    );
+    final percentage = targetCalories > 0
+        ? (currentCalories / targetCalories * 100)
+        : 0.0;
+    final displayPercentage = percentage.clamp(0.0, 100.0);
 
-    return AspectRatio(
-      aspectRatio: 2,
-      child: PieChart(
-        PieChartData(
-          sections: [
-            PieChartSectionData(
-              value: percentage,
-              color: Colors.orange,
-              radius: 40,
-              title: '${percentage.toStringAsFixed(1)}%',
-              titleStyle: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+    return Container(
+      width: 200,
+      height: 200,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // 파이 차트
+          AspectRatio(
+            aspectRatio: 1,
+            child: PieChart(
+              PieChartData(
+                sections: [
+                  PieChartSectionData(
+                    value: displayPercentage,
+                    color: percentage > 100 ? Colors.red : Colors.orange,
+                    radius: 60,
+                    title: '', // 섹션 타이틀 제거
+                    titleStyle: const TextStyle(fontSize: 0), // 크기를 0으로 설정
+                  ),
+                  if (displayPercentage < 100)
+                    PieChartSectionData(
+                      value: 100 - displayPercentage,
+                      color: Colors.grey.shade300,
+                      radius: 60,
+                      title: '', // 섹션 타이틀 제거
+                      titleStyle: const TextStyle(fontSize: 0),
+                    ),
+                ],
+                sectionsSpace: 2,
+                centerSpaceRadius: 50, // 중앙 공간 확대
+                startDegreeOffset: -90, // 12시 방향부터 시작
               ),
             ),
-            if (percentage < 100)
-              PieChartSectionData(
-                value: 100 - percentage,
-                color: Colors.grey.shade300,
-                radius: 40,
+          ),
+          // 중앙 텍스트
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                '${percentage.toStringAsFixed(1)}%',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: percentage > 100 ? Colors.red : Colors.orange,
+                ),
               ),
-          ],
-          sectionsSpace: 0,
-          centerSpaceRadius: 30,
-        ),
+              const SizedBox(height: 4),
+              Text(
+                '${currentCalories.toStringAsFixed(0)} kcal',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

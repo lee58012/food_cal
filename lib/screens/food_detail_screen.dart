@@ -127,29 +127,6 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
     );
   }
 
-  Widget _buildExerciseItem({
-    required IconData icon,
-    required String activity,
-    required int duration,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.green),
-          const SizedBox(width: 10),
-          Text(activity),
-          const Spacer(),
-          Text('$duration분'),
-        ],
-      ),
-    );
-  }
-
-  int _calculateExerciseTime(int calories, int caloriesPerMinute) {
-    return (calories / caloriesPerMinute).ceil();
-  }
-
   void _deleteFood(BuildContext context, Food food) async {
     final confirmed = await showDialog<bool>(
       context: context,

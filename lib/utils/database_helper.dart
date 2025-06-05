@@ -287,4 +287,11 @@ class DatabaseHelper {
       rethrow;
     }
   }
+
+  // 현재 저장된 음식 데이터의 최대 ID 값을 가져오는 메서드
+  Future<int> getMaxFoodId() async {
+    final db = await database;
+    final result = await db.rawQuery('SELECT MAX(id) as maxId FROM foods');
+    return (result.first['maxId'] as int?) ?? 0;
+  }
 }

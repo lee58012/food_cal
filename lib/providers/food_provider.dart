@@ -26,7 +26,7 @@ class FoodProvider with ChangeNotifier {
   DateTime get selectedDate => _selectedDate;
   bool get isLoading => _isLoading;
 
-  // 선택한 날짜의 음식만 필터링
+  // 선택한 날짜의 음식만 필터링 (캐시 우선 사용)
   List<Food> get foodsForSelectedDate {
     final dateFormat = DateFormat('yyyy-MM-dd');
     final selectedDateStr = dateFormat.format(_selectedDate);
@@ -47,20 +47,15 @@ class FoodProvider with ChangeNotifier {
     return filteredFoods;
   }
 
-  // 선택한 날짜의 총 칼로리 - 디버깅 로그 추가
-  int get totalCaloriesForSelectedDate {
+  // 선택한 날짜의 총 칼로리 (캐시 우선 사용)
+  double get totalCaloriesForSelectedDate {
     final dateFormat = DateFormat('yyyy-MM-dd');
     final selectedDateStr = dateFormat.format(_selectedDate);
-
-    print('=== 칼로리 계산 디버깅 ===');
-    print('선택된 날짜: $selectedDateStr');
-    print('전체 음식 개수: ${_foods.length}');
 
     // 캐시된 칼로리 데이터가 있으면 사용
     if (_cachedCaloriesByDate.containsKey(selectedDateStr)) {
       final cachedCalories = _cachedCaloriesByDate[selectedDateStr] ?? 0;
-      print('캐시된 칼로리 사용: $cachedCalories kcal');
-      return cachedCalories;
+      return cachedCalories.toDouble();
     }
 
     // 없으면 실시간 계산
@@ -69,49 +64,47 @@ class FoodProvider with ChangeNotifier {
       return foodDateStr == selectedDateStr;
     }).toList();
 
-    print('해당 날짜 음식 개수: ${filteredFoods.length}');
-
     final total = filteredFoods.fold(0, (sum, food) {
-      print('음식: ${food.name}, 칼로리: ${food.calories}');
       return sum + food.calories;
     });
 
     // 결과 캐싱
     _cachedCaloriesByDate[selectedDateStr] = total;
-    print('계산된 총 칼로리: $total kcal');
-    print('========================');
 
-    return total;
+    return total.toDouble();
   }
 
   // 선택한 날짜의 총 탄수화물
   double get totalCarbsForSelectedDate {
-    return foodsForSelectedDate.fold(0, (sum, food) => sum + food.carbs);
+    return foodsForSelectedDate.fold(0.0, (sum, food) => sum + food.carbs);
   }
 
   // 선택한 날짜의 총 단백질
   double get totalProteinForSelectedDate {
-    return foodsForSelectedDate.fold(0, (sum, food) => sum + food.protein);
+    return foodsForSelectedDate.fold(0.0, (sum, food) => sum + food.protein);
   }
 
   // 선택한 날짜의 총 지방
   double get totalFatForSelectedDate {
-    return foodsForSelectedDate.fold(0, (sum, food) => sum + food.fat);
+    return foodsForSelectedDate.fold(0.0, (sum, food) => sum + food.fat);
   }
 
   // 선택한 날짜의 총 나트륨
   double get totalSodiumForSelectedDate {
-    return foodsForSelectedDate.fold(0, (sum, food) => sum + food.sodium);
+    return foodsForSelectedDate.fold(0.0, (sum, food) => sum + food.sodium);
   }
 
   // 선택한 날짜의 총 콜레스테롤
   double get totalCholesterolForSelectedDate {
-    return foodsForSelectedDate.fold(0, (sum, food) => sum + food.cholesterol);
+    return foodsForSelectedDate.fold(
+      0.0,
+      (sum, food) => sum + food.cholesterol,
+    );
   }
 
   // 선택한 날짜의 총 당류
   double get totalSugarForSelectedDate {
-    return foodsForSelectedDate.fold(0, (sum, food) => sum + food.sugar);
+    return foodsForSelectedDate.fold(0.0, (sum, food) => sum + food.sugar);
   }
 
   // 날짜 선택 및 해당 날짜의 음식 데이터 로드
@@ -148,7 +141,7 @@ class FoodProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      // Firestore에서 음식 데이터 로드
+      // Firestore에서 음식 데이터 로드 (날짜 제한 없이 전체 데이터)
       _foods = await _firestoreService.getFoods(currentUser.uid);
 
       // 캐시 초기화
@@ -156,22 +149,40 @@ class FoodProvider with ChangeNotifier {
 
       // 로컬 DB와 동기화
       final dbHelper = DatabaseHelper();
-      await dbHelper.clearFoods(); // 기존 데이터 삭제
 
+      // 기존 데이터 삭제 전에 최대 ID 값 확인
+      final maxId = await dbHelper.getMaxFoodId();
+
+      // 기존 데이터 삭제
+      await dbHelper.clearFoods();
+
+      // Firestore 데이터를 로컬 DB에 저장 (새로운 ID 할당)
+      int newId = maxId + 1;
       for (var food in _foods) {
-        await dbHelper.insertFood(food.toMap());
+        final foodMap = food.toMap();
+        foodMap['id'] = newId++; // 새로운 ID 할당
+        await dbHelper.insertFood(foodMap);
       }
 
-      // 현재 선택된 날짜의 식단 데이터 로드
-      await loadFoodsByDate(_selectedDate);
-    } catch (e) {
-      // 오류 발생 시 로컬 DB에서 로드 시도
-      final dbHelper = DatabaseHelper();
+      // 로컬 DB에서 새로 저장된 데이터 다시 로드
       final foodsData = await dbHelper.getFoods();
       _foods = foodsData.map((map) => Food.fromMap(map)).toList();
 
-      // 로컬 데이터로 캐시 업데이트
+      // 날짜별로 캐시 업데이트
       _updateCacheFromLocalData();
+    } catch (e) {
+      // 오류 발생 시 로컬 DB에서 로드 시도
+      try {
+        final dbHelper = DatabaseHelper();
+        final foodsData = await dbHelper.getFoods();
+        _foods = foodsData.map((map) => Food.fromMap(map)).toList();
+
+        // 로컬 데이터로 캐시 업데이트
+        _updateCacheFromLocalData();
+      } catch (dbError) {
+        _foods = [];
+        _clearCache();
+      }
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -187,23 +198,24 @@ class FoodProvider with ChangeNotifier {
   // 로컬 데이터로 캐시 업데이트
   void _updateCacheFromLocalData() {
     final dateFormat = DateFormat('yyyy-MM-dd');
+    _clearCache();
 
     // 날짜별로 음식 분류
     for (var food in _foods) {
       final dateStr = dateFormat.format(food.dateTime);
 
+      // 음식 목록 캐시 업데이트
       if (!_cachedFoodsByDate.containsKey(dateStr)) {
         _cachedFoodsByDate[dateStr] = [];
       }
-
       _cachedFoodsByDate[dateStr]!.add(food);
+
+      // 칼로리 캐시 업데이트
+      _cachedCaloriesByDate[dateStr] =
+          (_cachedCaloriesByDate[dateStr] ?? 0) + food.calories;
     }
 
-    // 날짜별 칼로리 계산
-    _cachedFoodsByDate.forEach((dateStr, foods) {
-      final totalCalories = foods.fold(0, (sum, food) => sum + food.calories);
-      _cachedCaloriesByDate[dateStr] = totalCalories;
-    });
+    _cachedFoodsByDate.forEach((date, foods) {});
   }
 
   // 음식 추가 - 캐시 업데이트 수정
@@ -237,7 +249,6 @@ class FoodProvider with ChangeNotifier {
 
       // 2. Firestore에 저장 (트랜잭션 없이 단순 저장)
       await _firestoreService.addFood(currentUser.uid, newFood);
-      print('Firestore 음식 데이터 저장 성공: ${newFood.name}');
 
       // 3. 메모리에 추가
       _foods.add(newFood);
@@ -255,14 +266,7 @@ class FoodProvider with ChangeNotifier {
       // 칼로리 캐시 업데이트 - 기존 값에 더하기
       final currentCachedCalories = _cachedCaloriesByDate[dateStr] ?? 0;
       _cachedCaloriesByDate[dateStr] = currentCachedCalories + food.calories;
-
-      print('음식 추가 후 캐시 업데이트:');
-      print('- 날짜: $dateStr');
-      print('- 추가된 음식: ${newFood.name} (${food.calories} kcal)');
-      print('- 업데이트된 총 칼로리: ${_cachedCaloriesByDate[dateStr]} kcal');
     } catch (e) {
-      print('Firestore 음식 데이터 저장 오류: $e');
-
       // Firestore 저장 실패 시 로컬 데이터도 롤백
       try {
         final dbHelper = DatabaseHelper();
@@ -270,9 +274,7 @@ class FoodProvider with ChangeNotifier {
           await dbHelper.deleteFood(_foods.last.id!);
           _foods.removeLast();
         }
-      } catch (rollbackError) {
-        print('로컬 데이터 롤백 실패: $rollbackError');
-      }
+      } catch (rollbackError) {}
 
       rethrow; // 오류를 상위로 전파
     } finally {
@@ -321,16 +323,8 @@ class FoodProvider with ChangeNotifier {
         _cachedCaloriesByDate[dateStr] = (currentCachedCalories - food.calories)
             .clamp(0, double.infinity)
             .toInt();
-
-        print('음식 삭제 후 캐시 업데이트:');
-        print('- 날짜: $dateStr');
-        print('- 삭제된 음식: ${food.name} (${food.calories} kcal)');
-        print('- 업데이트된 총 칼로리: ${_cachedCaloriesByDate[dateStr]} kcal');
       }
-
-      print('음식 및 이미지 삭제 완료: ${food.name}');
     } catch (e) {
-      print('음식 삭제 오류: $e');
       // 오류 발생 시 데이터 다시 로드
       await loadFoodsByDate(_selectedDate);
     } finally {
@@ -377,11 +371,6 @@ class FoodProvider with ChangeNotifier {
         );
         _cachedCaloriesByDate[dateStr] = totalCalories;
 
-        print('날짜별 데이터 로드 완료:');
-        print('- 날짜: $dateStr');
-        print('- 음식 개수: ${foodsForDate.length}');
-        print('- 총 칼로리: $totalCalories kcal');
-
         // 로컬 DB 동기화
         final dbHelper = DatabaseHelper();
         await dbHelper.deleteFoodsByDate(dateStr);
@@ -393,8 +382,6 @@ class FoodProvider with ChangeNotifier {
         // 데이터가 없는 경우 캐시 초기화
         _cachedFoodsByDate[dateStr] = [];
         _cachedCaloriesByDate[dateStr] = 0;
-
-        print('날짜별 데이터 없음: $dateStr');
       }
     } catch (e) {
       try {
