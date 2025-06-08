@@ -1,3 +1,5 @@
+// ignore_for_file: unused_local_variable
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:hoseo/models/user.dart';
@@ -367,7 +369,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final userProvider = Provider.of<UserProvider>(context);
-    final user = userProvider.user;
+    final isLoggedIn = userProvider.isLoggedIn;
 
     return Scaffold(
       appBar: AppBar(
@@ -376,18 +378,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
-            onPressed: () async {
-              try {
-                await _authService.signOut();
-                if (mounted) {
-                  Navigator.of(context).pushReplacementNamed('/login');
-                }
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('로그아웃 중 오류가 발생했습니다: $e')),
-                );
-              }
-            },
+            onPressed: _logout,
             tooltip: '로그아웃',
           ),
         ],

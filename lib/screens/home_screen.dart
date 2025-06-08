@@ -24,9 +24,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   double _currentCalories = 0.0;
   bool _isLoading = false;
+  bool _subscriptionActive = false;
   StreamSubscription? _foodsSubscription;
   StreamSubscription? _userSubscription;
-  final AuthService _authService = AuthService();
+  DateTime _lastSelectedDate = DateTime.now();
 
   @override
   void initState() {
@@ -59,9 +60,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   void _setupSubscriptions() {
     final user = Provider.of<UserProvider>(context, listen: false).user;
-    if (user?.uid != null) {
-      // 이미 구독이 활성화되어 있으면 중복 생성 방지
-      if (_foodsSubscription != null) return;
+    if (user?.uid != null && !_subscriptionActive) {
+      // 플래그 확인 추가
+      _subscriptionActive = true; // 구독 활성화 표시
 
       // 전체 음식 데이터에 대한 구독
       _foodsSubscription = FirebaseFirestore.instance
@@ -71,11 +72,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           .snapshots()
           .listen(
             (snapshot) async {
-              if (mounted) {
+              if (mounted && _subscriptionActive) {
+                // 구독 활성화 상태 확인
                 // 디바운싱을 위한 지연 추가
-                await Future.delayed(const Duration(milliseconds: 200));
+                await Future.delayed(const Duration(milliseconds: 500));
 
-                if (mounted) {
+                if (mounted && _subscriptionActive) {
                   final foodProvider = Provider.of<FoodProvider>(
                     context,
                     listen: false,
@@ -86,7 +88,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 }
               }
             },
-            onError: (error) {},
+            onError: (error) {
+              print('Firestore 구독 오류: $error');
+            },
             cancelOnError: false,
           );
     }
@@ -94,6 +98,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _subscriptionActive = false; // 구독 비활성화
     _foodsSubscription?.cancel();
     _userSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
@@ -136,17 +141,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final foodProvider = Provider.of<FoodProvider>(context, listen: false);
 
     try {
-      // 항상 최신 데이터를 로드하도록 수정
-      await foodProvider.loadFoodsByDate(foodProvider.selectedDate);
+      // 선택된 날짜가 변경된 경우에만 데이터 로드
+      if (_lastSelectedDate != foodProvider.selectedDate) {
+        await foodProvider.loadFoodsByDate(foodProvider.selectedDate);
+        _lastSelectedDate = foodProvider.selectedDate;
+      }
 
       // 캐시된 칼로리 데이터 사용 - double 타입으로 변경
       final localCalories = foodProvider.totalCaloriesForSelectedDate;
 
-      // 항상 UI 업데이트하도록 수정
-      if (mounted) {
-        setState(() {
-          _currentCalories = localCalories;
-        });
+      // 값이 실제로 변경된 경우에만 setState 호출
+      if (_currentCalories != localCalories) {
+        if (mounted) {
+          setState(() {
+            _currentCalories = localCalories;
+          });
+        }
       }
     } catch (e) {
       // 오류 발생 시에도 값이 다른 경우에만 setState
@@ -210,18 +220,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
-              try {
-                await _authService.signOut();
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('로그아웃'),
+                  content: const Text('정말 로그아웃 하시겠습니까?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: const Text('취소'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      child: const Text('확인'),
+                    ),
+                  ],
+                ),
+              );
+
+              if (confirmed == true) {
+                await AuthService().signOut();
                 if (mounted) {
                   Navigator.of(context).pushReplacementNamed('/login');
                 }
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('로그아웃 중 오류가 발생했습니다: $e')),
-                );
               }
             },
-            tooltip: '로그아웃',
           ),
         ],
       ),
@@ -706,9 +729,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 );
                               },
                               onDelete: () async {
-                                if (food.id != null) {
+                                if (food.food_id != null) {
                                   try {
-                                    await foodProvider.deleteFood(food.id!);
+                                    await foodProvider.deleteFood(
+                                      food.food_id!,
+                                    );
 
                                     // 삭제 후 즉시 칼로리 업데이트
                                     if (mounted) {
@@ -725,7 +750,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                       ).showSnackBar(
                                         SnackBar(
                                           content: Text(
-                                            '${food.name}이(가) 삭제되었습니다.',
+                                            '${food.food_name}이(가) 삭제되었습니다.',
                                           ),
                                           backgroundColor: Colors.green,
                                         ),

@@ -58,7 +58,7 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
                     children: [
                       Expanded(
                         child: Text(
-                          food.name,
+                          food.food_name,
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
@@ -146,10 +146,10 @@ class _FoodDetailScreenState extends State<FoodDetailScreen> {
       ),
     );
 
-    if (confirmed == true && food.id != null) {
+    if (confirmed == true && food.food_id != null) {
       try {
         final foodProvider = Provider.of<FoodProvider>(context, listen: false);
-        await foodProvider.deleteFood(food.id!);
+        await foodProvider.deleteFood(food.food_id!);
 
         // 삭제 후 데이터 갱신을 위해 잠시 대기
         await Future.delayed(const Duration(milliseconds: 300));

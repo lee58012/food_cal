@@ -1,6 +1,6 @@
 class Food {
-  final dynamic id; // int 또는 String 타입 모두 지원
-  final String name;
+  final int? food_id;
+  final String food_name;
   final int calories;
   final double carbs;
   final double protein;
@@ -12,8 +12,8 @@ class Food {
   final DateTime dateTime;
 
   Food({
-    this.id,
-    required this.name,
+    this.food_id,
+    required this.food_name,
     required this.calories,
     required this.carbs,
     required this.protein,
@@ -27,8 +27,8 @@ class Food {
 
   Map<String, dynamic> toMap() {
     return {
-      'id': id,
-      'name': name,
+      'food_id': food_id,
+      'food_name': food_name,
       'calories': calories,
       'carbs': carbs,
       'protein': protein,
@@ -43,8 +43,8 @@ class Food {
 
   factory Food.fromMap(Map<String, dynamic> map) {
     return Food(
-      id: map['id'], // String이나 int 타입 모두 처리
-      name: map['name'] as String,
+      food_id: map['food_id'] as int?,
+      food_name: map['food_name'] as String,
       calories: map['calories'] as int,
       carbs: (map['carbs'] as num).toDouble(),
       protein: (map['protein'] as num).toDouble(),

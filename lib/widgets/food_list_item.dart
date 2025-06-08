@@ -48,7 +48,7 @@ class FoodListItem extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      food.name,
+                      food.food_name,
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,

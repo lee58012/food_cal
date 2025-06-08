@@ -1,28 +1,22 @@
-// ignore_for_file: unused_import
+// ignore_for_file: unused_import, avoid_print
 
-import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart' as auth;
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:hoseo/models/food.dart';
 import 'package:hoseo/utils/database_helper.dart';
 import 'package:hoseo/utils/firestore_service.dart';
 import 'package:intl/intl.dart';
+import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:uuid/uuid.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:http/http.dart' as http;
-import 'package:image_picker/image_picker.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class FoodProvider with ChangeNotifier {
   List<Food> _foods = [];
   DateTime _selectedDate = DateTime.now();
   final FirestoreService _firestoreService = FirestoreService();
   final auth.FirebaseAuth _auth = auth.FirebaseAuth.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
-  final String _apiBaseUrl = 'https://api.example.com'; // API 서버 URL
   bool _isLoading = false;
 
   // 캐싱을 위한 변수들
@@ -41,6 +35,9 @@ class FoodProvider with ChangeNotifier {
 
     // 캐시된 데이터가 있으면 사용
     if (_cachedFoodsByDate.containsKey(selectedDateStr)) {
+      print(
+        '캐시에서 음식 데이터 가져옴: $selectedDateStr, 개수: ${_cachedFoodsByDate[selectedDateStr]?.length ?? 0}',
+      );
       return _cachedFoodsByDate[selectedDateStr] ?? [];
     }
 
@@ -52,6 +49,7 @@ class FoodProvider with ChangeNotifier {
 
     // 결과 캐싱
     _cachedFoodsByDate[selectedDateStr] = filteredFoods;
+    print('필터링된 음식 데이터 캐싱: $selectedDateStr, 개수: ${filteredFoods.length}');
     return filteredFoods;
   }
 
@@ -150,30 +148,33 @@ class FoodProvider with ChangeNotifier {
 
     try {
       // Firestore에서 음식 데이터 로드 (날짜 제한 없이 전체 데이터)
+      print('Firestore에서 전체 음식 데이터 로드 시작');
       _foods = await _firestoreService.getFoods(currentUser.uid);
+      print('Firestore에서 가져온 전체 음식 데이터 수: ${_foods.length}');
 
       // 캐시 초기화
       _clearCache();
 
       // 웹 환경이 아닐 때만 로컬 DB 동기화 수행
       if (!kIsWeb) {
-        // 로컬 DB와 동기화 - 중복 확인 로직 추가
+        // 로컬 DB와 동기화 - 중복 확인 로직 제거
         final dbHelper = DatabaseHelper();
+        print('로컬 DB와 전체 데이터 동기화 시작: ${_foods.length}개 음식');
 
         // 업데이트된 음식 객체를 저장할 새 리스트
         List<Food> updatedFoods = [];
 
-        // 기존 데이터를 모두 삭제하지 않고, 각 음식별로 중복 여부 확인 후 삽입
+        // 각 음식별로 삽입
         for (var food in _foods) {
           final foodMap = food.toMap();
-          // 중복 확인 로직은 insertFood 메서드 내에서 처리
+          // 중복 체크 없이 모든 음식 저장
           final id = await dbHelper.insertFood(foodMap);
 
           // 업데이트된 ID로 새 Food 객체 생성하여 리스트에 추가
           updatedFoods.add(
             Food(
-              id: id,
-              name: food.name,
+              food_id: id,
+              food_name: food.food_name,
               calories: food.calories,
               carbs: food.carbs,
               protein: food.protein,
@@ -190,10 +191,15 @@ class FoodProvider with ChangeNotifier {
         // 업데이트된 리스트로 교체
         _foods = updatedFoods;
 
+        print('로컬 DB 동기화 완료');
+
         // 로컬 DB에서 최신 데이터 다시 로드
         final foodsData = await dbHelper.getFoods();
         _foods = foodsData.map((map) => Food.fromMap(map)).toList();
-      } else {}
+        print('로컬 DB에서 다시 로드한 데이터 수: ${_foods.length}');
+      } else {
+        print('웹 환경에서는 로컬 DB 동기화를 건너뜁니다.');
+      }
 
       // 날짜별로 캐시 업데이트
       _updateCacheFromLocalData();
@@ -206,16 +212,20 @@ class FoodProvider with ChangeNotifier {
         return foodDateStr == selectedDateStr;
       }).toList();
       _cachedFoodsByDate[selectedDateStr] = filteredFoods;
+      print('현재 선택된 날짜($selectedDateStr)의 데이터 수: ${filteredFoods.length}');
     } catch (e) {
       // 오류 발생 시 로컬 DB에서 로드 시도
+      print('Firestore 데이터 로드 오류: $e');
       try {
         final dbHelper = DatabaseHelper();
         final foodsData = await dbHelper.getFoods();
         _foods = foodsData.map((map) => Food.fromMap(map)).toList();
+        print('로컬 DB에서 가져온 데이터 수: ${_foods.length}');
 
         // 로컬 데이터로 캐시 업데이트
         _updateCacheFromLocalData();
       } catch (dbError) {
+        print('로컬 DB 로드 오류: $dbError');
         _foods = [];
         _clearCache();
       }
@@ -231,26 +241,12 @@ class FoodProvider with ChangeNotifier {
     _cachedCaloriesByDate.clear();
   }
 
-  // 데이터 강제 새로고침
-  Future<void> refreshData() async {
-    final dateFormat = DateFormat('yyyy-MM-dd');
-    final selectedDateStr = dateFormat.format(_selectedDate);
-
-    // 선택된 날짜의 캐시 삭제
-    _cachedFoodsByDate.remove(selectedDateStr);
-    _cachedCaloriesByDate.remove(selectedDateStr);
-
-    // 데이터 다시 로드
-    await loadFoodsByDate(_selectedDate);
-
-    // UI 갱신
-    notifyListeners();
-  }
-
   // 로컬 데이터로 캐시 업데이트
   void _updateCacheFromLocalData() {
     final dateFormat = DateFormat('yyyy-MM-dd');
     _clearCache();
+
+    print('로컬 데이터로 캐시 업데이트 시작: ${_foods.length}개 음식');
 
     // 날짜별로 음식 분류
     for (var food in _foods) {
@@ -268,22 +264,39 @@ class FoodProvider with ChangeNotifier {
     }
 
     // 캐시된 날짜 및 데이터 수 로그
-    _cachedFoodsByDate.forEach((date, foods) {});
+    _cachedFoodsByDate.forEach((date, foods) {
+      print('캐시된 날짜: $date, 음식 수: ${foods.length}');
+    });
+
+    print('캐시 업데이트 완료: ${_cachedFoodsByDate.length}개 날짜');
   }
 
-  // 음식 추가 - 성능 최적화
+  // 음식 추가 - 중복 처리 및 웹 환경 고려
   Future<void> addFood(Food food) async {
     final currentUser = _auth.currentUser;
-    if (currentUser == null) return;
+    if (currentUser == null) {
+      throw Exception('사용자가 로그인되지 않았습니다.');
+    }
 
     _isLoading = true;
     notifyListeners();
 
     try {
-      // 메모리 캐시에 먼저 추가 (UI 즉시 업데이트)
-      final tempFood = Food(
-        id: DateTime.now().millisecondsSinceEpoch.toString(), // 임시 ID
-        name: food.name,
+      // 1. 웹 환경이 아닐 때만 로컬 DB에 저장
+      int localId = 0;
+      if (!kIsWeb) {
+        // 로컬 DB에 저장하여 ID 생성 (중복 처리 포함)
+        final dbHelper = DatabaseHelper();
+        localId = await dbHelper.insertFood(food.toMap());
+      } else {
+        // 웹 환경에서는 임시 ID 생성
+        localId = DateTime.now().millisecondsSinceEpoch;
+        print('웹 환경에서는 로컬 DB 저장을 건너뜁니다. 임시 ID: $localId');
+      }
+
+      final newFood = Food(
+        food_id: localId,
+        food_name: food.food_name,
         calories: food.calories,
         carbs: food.carbs,
         protein: food.protein,
@@ -295,102 +308,113 @@ class FoodProvider with ChangeNotifier {
         dateTime: food.dateTime,
       );
 
-      _foods.add(tempFood);
+      // 2. Firestore에 저장
+      await _firestoreService.addFood(currentUser.uid, newFood);
 
-      // 캐시 업데이트 (UI 즉시 업데이트)
+      // 3. 메모리에 추가
+      _foods.add(newFood);
+
+      // 4. 캐시 업데이트
       final dateFormat = DateFormat('yyyy-MM-dd');
-      final foodDateStr = dateFormat.format(food.dateTime);
-      final selectedDateStr = dateFormat.format(_selectedDate);
+      final dateStr = dateFormat.format(food.dateTime);
 
-      if (foodDateStr == selectedDateStr) {
-        // 캐시가 있으면 업데이트
-        if (_cachedFoodsByDate.containsKey(selectedDateStr)) {
-          _cachedFoodsByDate[selectedDateStr]!.add(tempFood);
-        } else {
-          _cachedFoodsByDate[selectedDateStr] = [tempFood];
-        }
-
-        // 칼로리 캐시 업데이트
-        _cachedCaloriesByDate[selectedDateStr] =
-            (_cachedCaloriesByDate[selectedDateStr] ?? 0) + food.calories;
+      // 음식 목록 캐시 업데이트
+      if (!_cachedFoodsByDate.containsKey(dateStr)) {
+        _cachedFoodsByDate[dateStr] = [];
       }
+      _cachedFoodsByDate[dateStr]!.add(newFood);
 
-      // UI 업데이트를 위해 로딩 상태 해제
-      _isLoading = false;
-      notifyListeners();
-
-      // 백그라운드에서 Firestore 저장 및 로컬 DB 저장
-      // Firestore에 저장하고 문서 ID 받기
-      final docId = await _firestoreService.addFood(currentUser.uid, food);
-
-      // 로컬 DB에도 저장 (웹이 아닌 경우)
-      if (!kIsWeb) {
-        final dbHelper = DatabaseHelper();
-        final foodMap = food.toMap();
-        // Firestore 문서 ID 추가
-        foodMap['firestore_id'] = docId;
-        await dbHelper.insertFood(foodMap);
-      }
-
-      // 임시 ID를 실제 ID로 교체
-      final index = _foods.indexWhere((f) => f.id == tempFood.id);
-      if (index != -1) {
-        final updatedFood = Food(
-          id: docId,
-          name: food.name,
-          calories: food.calories,
-          carbs: food.carbs,
-          protein: food.protein,
-          fat: food.fat,
-          sodium: food.sodium,
-          cholesterol: food.cholesterol,
-          sugar: food.sugar,
-          imageUrl: food.imageUrl,
-          dateTime: food.dateTime,
-        );
-
-        _foods[index] = updatedFood;
-
-        // 캐시도 업데이트
-        if (foodDateStr == selectedDateStr &&
-            _cachedFoodsByDate.containsKey(selectedDateStr)) {
-          final cacheIndex = _cachedFoodsByDate[selectedDateStr]!.indexWhere(
-            (f) => f.id == tempFood.id,
-          );
-          if (cacheIndex != -1) {
-            _cachedFoodsByDate[selectedDateStr]![cacheIndex] = updatedFood;
-          }
-        }
-      }
+      // 칼로리 캐시 업데이트
+      final currentCachedCalories = _cachedCaloriesByDate[dateStr] ?? 0;
+      _cachedCaloriesByDate[dateStr] = currentCachedCalories + food.calories;
     } catch (e) {
-      print('음식 추가 오류: $e');
-      // 오류 발생 시 UI 업데이트
+      // Firestore 저장 실패 시 로컬 데이터도 롤백 (웹이 아닐 때만)
+      if (!kIsWeb) {
+        try {
+          final dbHelper = DatabaseHelper();
+          if (_foods.isNotEmpty && _foods.last.food_name == food.food_name) {
+            await dbHelper.deleteFood(_foods.last.food_id!);
+            _foods.removeLast();
+          }
+        } catch (rollbackError) {
+          print('롤백 오류: $rollbackError');
+        }
+      }
+
+      rethrow; // 오류를 상위로 전파
+    } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  // 음식 삭제 - 성능 최적화
-  Future<void> deleteFood(dynamic id) async {
+  // 음식 삭제 - 수정된 버전
+  Future<void> deleteFood(int id) async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
 
+    _isLoading = true;
+    notifyListeners();
+
     try {
       // 삭제할 음식 찾기
-      final foodIndex = _foods.indexWhere((food) => food.id == id);
-      if (foodIndex == -1) return; // 음식을 찾을 수 없음
-
-      final food = _foods[foodIndex];
+      final food = _foods.firstWhere((food) => food.food_id == id);
       final dateTime = food.dateTime;
       final dateFormat = DateFormat('yyyy-MM-dd');
       final dateStr = dateFormat.format(dateTime);
 
-      // 1. 먼저 메모리와 캐시에서 제거 (UI 즉시 업데이트)
-      _foods.removeAt(foodIndex);
+      // 1. 웹 환경이 아닐 때만 로컬 DB에서 삭제
+      if (!kIsWeb) {
+        final dbHelper = DatabaseHelper();
+        await dbHelper.deleteFood(id);
+      } else {
+        print('웹 환경에서는 로컬 DB 삭제를 건너뜁니다.');
+      }
 
-      // 캐시 업데이트
+      // 2. Firestore에서 삭제 - 음식 이름과 날짜로 검색하여 삭제
+      try {
+        final foodsQuery = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .collection('foods')
+            .where('food_name', isEqualTo: food.food_name)
+            .where('dateTime', isEqualTo: food.dateTime.toIso8601String())
+            .get();
+
+        // 일치하는 문서들을 모두 삭제
+        for (var doc in foodsQuery.docs) {
+          await doc.reference.delete();
+          print('Firestore에서 음식 삭제: ${doc.id}');
+        }
+
+        // 일일 칼로리도 업데이트
+        final calorieDocRef = FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .collection('dailyCalories')
+            .doc(dateStr);
+
+        final calorieDoc = await calorieDocRef.get();
+        if (calorieDoc.exists) {
+          final currentCalories = calorieDoc.data()?['calories'] ?? 0;
+          final newCalories = (currentCalories - food.calories)
+              .clamp(0, double.infinity)
+              .toInt();
+          await calorieDocRef.update({
+            'calories': newCalories,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (firestoreError) {
+        print('Firestore 삭제 오류: $firestoreError');
+      }
+
+      // 3. 메모리에서 제거
+      _foods.removeWhere((food) => food.food_id == id);
+
+      // 4. 캐시 업데이트
       if (_cachedFoodsByDate.containsKey(dateStr)) {
-        _cachedFoodsByDate[dateStr]!.removeWhere((f) => f.id == id);
+        _cachedFoodsByDate[dateStr]!.removeWhere((f) => f.food_id == id);
 
         // 칼로리 캐시에서 삭제된 음식의 칼로리 빼기
         final currentCachedCalories = _cachedCaloriesByDate[dateStr] ?? 0;
@@ -398,34 +422,17 @@ class FoodProvider with ChangeNotifier {
             .clamp(0, double.infinity)
             .toInt();
       }
-
-      // UI 즉시 업데이트
-      notifyListeners();
-
-      // 2. 백그라운드에서 Firestore와 로컬 DB에서 삭제
-      // 웹 환경이 아닐 때만 로컬 DB에서 삭제
-      if (!kIsWeb && id is int) {
-        final dbHelper = DatabaseHelper();
-        await dbHelper.deleteFood(id);
-      }
-
-      // Firestore에서 삭제 (이미지도 함께 삭제)
-      await _firestoreService.deleteFood(
-        currentUser.uid,
-        id, // ID를 그대로 전달
-        food.calories,
-        food.dateTime,
-        food.imageUrl, // 이미지 URL 전달
-      );
     } catch (e) {
-      print('음식 삭제 오류: $e');
       // 오류 발생 시 데이터 다시 로드
+      print('음식 삭제 오류: $e');
       await loadFoodsByDate(_selectedDate);
+    } finally {
+      _isLoading = false;
       notifyListeners();
     }
   }
 
-  // 날짜별 음식 로드 - 캐시 업데이트 수정
+  // 특정 날짜의 음식 데이터 로드 (캐시 우선 사용)
   Future<void> loadFoodsByDate(DateTime date) async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
@@ -433,160 +440,80 @@ class FoodProvider with ChangeNotifier {
     final dateFormat = DateFormat('yyyy-MM-dd');
     final dateStr = dateFormat.format(date);
 
-    if (_isLoading) return;
+    // 이미 캐시된 데이터가 있으면 사용
+    if (_cachedFoodsByDate.containsKey(dateStr)) {
+      print(
+        '캐시된 데이터 사용: $dateStr, 개수: ${_cachedFoodsByDate[dateStr]?.length ?? 0}',
+      );
+      return; // 캐시된 데이터가 있으면 추가 로드 없이 종료
+    }
 
     _isLoading = true;
+    notifyListeners();
 
     try {
-      final foodsForDate = await _firestoreService.getFoodsByDate(
-        currentUser.uid,
-        date,
-      );
+      List<Food> foods = [];
 
-      // 기존 해당 날짜 음식들을 메모리에서 제거
-      _foods.removeWhere((food) {
-        final foodDateStr = dateFormat.format(food.dateTime);
-        return foodDateStr == dateStr;
-      });
-
-      // 새로운 음식들 추가
-      _foods.addAll(foodsForDate);
-
-      // 캐시 업데이트
-      _cachedFoodsByDate[dateStr] = List<Food>.from(foodsForDate);
-
-      // 칼로리 다시 계산
-      final totalCalories = foodsForDate.fold(
-        0,
-        (sum, food) => sum + food.calories,
-      );
-      _cachedCaloriesByDate[dateStr] = totalCalories;
-
-      // 웹 환경이 아닐 때만 로컬 DB 동기화 수행
+      // 웹 환경이 아닐 때만 로컬 DB 사용
       if (!kIsWeb) {
-        // 로컬 DB 동기화 - 삭제 대신 중복 확인 후 삽입
-        final dbHelper = DatabaseHelper();
-
-        // 날짜별 삭제를 하지 않고 개별 음식마다 중복 확인
-        for (var food in foodsForDate) {
-          // 중복 확인 로직은 insertFood 메서드 내에서 처리
-          await dbHelper.insertFood(food.toMap());
-        }
-      } else {}
-    } catch (e) {
-      try {
+        // 로컬 DB에서 특정 날짜의 데이터 로드
         final dbHelper = DatabaseHelper();
         final foodsData = await dbHelper.getFoodsByDate(dateStr);
-
-        if (foodsData.isNotEmpty) {
-          final localFoods = foodsData.map((map) => Food.fromMap(map)).toList();
-
-          _foods.removeWhere((food) {
-            final foodDateStr = dateFormat.format(food.dateTime);
-            return foodDateStr == dateStr;
-          });
-
-          _foods.addAll(localFoods);
-
-          _cachedFoodsByDate[dateStr] = List<Food>.from(localFoods);
-          _cachedCaloriesByDate[dateStr] = localFoods.fold(
-            0,
-            (sum, food) => sum + food.calories,
-          );
-        } else {
-          _cachedFoodsByDate[dateStr] = [];
-          _cachedCaloriesByDate[dateStr] = 0;
-        }
-      } catch (dbError) {
-        _cachedFoodsByDate[dateStr] = [];
-        _cachedCaloriesByDate[dateStr] = 0;
+        foods = foodsData.map((map) => Food.fromMap(map)).toList();
+        print('로컬 DB에서 가져온 $dateStr 데이터 수: ${foods.length}');
+      } else {
+        // 웹 환경에서는 메모리 필터링
+        foods = _foods.where((food) {
+          final foodDateStr = dateFormat.format(food.dateTime);
+          return foodDateStr == dateStr;
+        }).toList();
+        print('웹 환경에서 메모리 필터링: $dateStr, 개수: ${foods.length}');
       }
+
+      // 캐시 업데이트
+      _cachedFoodsByDate[dateStr] = foods;
+
+      // 칼로리 캐시 업데이트
+      final totalCalories = foods.fold(0, (sum, food) => sum + food.calories);
+      _cachedCaloriesByDate[dateStr] = totalCalories;
+    } catch (e) {
+      print('날짜별 음식 데이터 로드 오류: $e');
+      // 오류 발생 시 빈 리스트로 캐시 설정
+      _cachedFoodsByDate[dateStr] = [];
+      _cachedCaloriesByDate[dateStr] = 0;
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
 
-  // 음식 이미지 분석 - XFile 지원
-  Future<Map<String, dynamic>?> analyzeFoodImage(XFile imageFile) async {
+  // 이미지 분석 요청
+  Future<Map<String, dynamic>> analyzeFoodImage(File image) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      throw Exception('사용자가 로그인되지 않았습니다.');
+    }
+
     try {
-      final bytes = await imageFile.readAsBytes();
-
-      // 이미지 분석 API 호출
-      final response = await http.post(
-        Uri.parse('$_apiBaseUrl/analyze-food'),
-        headers: {'Content-Type': 'application/octet-stream'},
-        body: bytes,
-      );
-
-      if (response.statusCode == 200) {
-        final result = jsonDecode(response.body);
-        return result;
-      } else {
-        print('API 오류: ${response.statusCode}, ${response.body}');
-        return null;
-      }
+      return await _firestoreService.analyzeFoodImage(currentUser.uid, image);
     } catch (e) {
-      print('음식 이미지 분석 오류: $e');
-      return null;
+      print('이미지 분석 오류: $e');
+      rethrow;
     }
   }
 
-  // 음식 이미지 업로드 - XFile 지원
-  Future<String?> uploadFoodImage(XFile imageFile) async {
+  // 이미지 업로드
+  Future<String?> uploadFoodImage(File image) async {
     final currentUser = _auth.currentUser;
-    if (currentUser == null) return null;
+    if (currentUser == null) {
+      throw Exception('사용자가 로그인되지 않았습니다.');
+    }
 
     try {
-      final file = File(imageFile.path);
-      final fileName =
-          '${currentUser.uid}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final ref = _storage.ref().child('food_images/$fileName');
-
-      // 이미지 업로드
-      final uploadTask = ref.putFile(
-        file,
-        SettableMetadata(contentType: 'image/jpeg'),
-      );
-
-      // 업로드 완료 대기
-      final snapshot = await uploadTask;
-
-      // 다운로드 URL 가져오기
-      final downloadUrl = await snapshot.ref.getDownloadURL();
-      return downloadUrl;
+      return await _firestoreService.uploadFoodImage(currentUser.uid, image);
     } catch (e) {
       print('이미지 업로드 오류: $e');
-      return null;
-    }
-  }
-
-  Future<int> getDailyCalorieIntake(DateTime date) async {
-    final dateFormat = DateFormat('yyyy-MM-dd');
-    final dateStr = dateFormat.format(date);
-
-    if (_cachedCaloriesByDate.containsKey(dateStr)) {
-      return _cachedCaloriesByDate[dateStr] ?? 0;
-    }
-
-    final currentUser = _auth.currentUser;
-    if (currentUser == null) return 0;
-
-    try {
-      final calories = await _firestoreService.getDailyCalorieIntake(
-        currentUser.uid,
-        date,
-      );
-
-      _cachedCaloriesByDate[dateStr] = calories;
-      return calories;
-    } catch (e) {
-      final localCalories = foodsForSelectedDate.fold(
-        0,
-        (sum, food) => sum + food.calories,
-      );
-      _cachedCaloriesByDate[dateStr] = localCalories;
-      return localCalories;
+      rethrow;
     }
   }
 }

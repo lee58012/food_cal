@@ -20,7 +20,7 @@ class CalorieChart extends StatelessWidget {
         : 0.0;
     final displayPercentage = percentage.clamp(0.0, 100.0);
 
-    return SizedBox(
+    return Container(
       width: 200,
       height: 200,
       child: Stack(
