@@ -178,10 +178,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   Future<void> _refreshHomeData() async {
     final foodProvider = Provider.of<FoodProvider>(context, listen: false);
 
-    // 이미 캐시된 데이터가 있으면 불필요한 로드 방지
-    if (foodProvider.foodsForSelectedDate.isEmpty) {
-      await foodProvider.loadFoodsByDate(foodProvider.selectedDate);
-    }
+    // 데이터를 강제로 새로고침
+    await foodProvider.refreshData();
   }
 
   Future<void> _loadUserData({bool forceRefresh = true}) async {

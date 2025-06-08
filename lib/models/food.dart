@@ -1,5 +1,5 @@
 class Food {
-  final int? id;
+  final dynamic id; // int 또는 String 타입 모두 지원
   final String name;
   final int calories;
   final double carbs;
@@ -43,7 +43,7 @@ class Food {
 
   factory Food.fromMap(Map<String, dynamic> map) {
     return Food(
-      id: map['id'] as int?,
+      id: map['id'], // String이나 int 타입 모두 처리
       name: map['name'] as String,
       calories: map['calories'] as int,
       carbs: (map['carbs'] as num).toDouble(),

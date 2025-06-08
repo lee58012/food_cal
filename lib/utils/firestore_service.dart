@@ -102,68 +102,54 @@ class FirestoreService {
     }
   }
 
-  // 음식 데이터 저장
-  Future<String> addFood(String uid, Food food) async {
+  // 음식 추가 - 성능 최적화
+  Future<String> addFood(String userId, Food food) async {
     try {
-      String docId = '';
-      await _firestore.runTransaction((transaction) async {
-        // 1. 먼저 모든 읽기 작업 수행
-        final dateString = DateFormat('yyyy-MM-dd').format(food.dateTime);
-        final calorieDocRef = _firestore
-            .collection('users')
-            .doc(uid)
-            .collection('dailyCalories')
-            .doc(dateString);
+      // 배치 작업으로 여러 문서를 한 번에 업데이트
+      WriteBatch batch = _firestore.batch();
 
-        // 읽기 작업을 먼저 실행
-        final calorieDoc = await transaction.get(calorieDocRef);
+      // 1. 음식 문서 추가
+      final foodRef = _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('foods')
+          .doc(); // 자동 ID 생성
 
-        // 2. 그 다음 모든 쓰기 작업 수행
-        // 음식 문서 생성 및 저장
-        final docRef = _firestore
-            .collection('users')
-            .doc(uid)
-            .collection('foods')
-            .doc();
-
-        docId = docRef.id;
-
-        transaction.set(docRef, {
-          'name': food.name,
-          'calories': food.calories,
-          'carbs': food.carbs,
-          'protein': food.protein,
-          'fat': food.fat,
-          'sodium': food.sodium,
-          'cholesterol': food.cholesterol,
-          'sugar': food.sugar,
-          'imageUrl': food.imageUrl,
-          'dateTime': food.dateTime.toIso8601String(),
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-
-        // 일일 칼로리 업데이트
-        if (calorieDoc.exists) {
-          final currentCalories = calorieDoc.data()?['calories'] ?? 0;
-          transaction.update(calorieDocRef, {
-            'calories': currentCalories + food.calories,
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-        } else {
-          transaction.set(calorieDocRef, {
-            'date': dateString,
-            'calories': food.calories,
-            'createdAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
-        }
+      batch.set(foodRef, {
+        'name': food.name,
+        'calories': food.calories,
+        'carbs': food.carbs,
+        'protein': food.protein,
+        'fat': food.fat,
+        'sodium': food.sodium,
+        'cholesterol': food.cholesterol,
+        'sugar': food.sugar,
+        'imageUrl': food.imageUrl,
+        'dateTime': food.dateTime,
+        'createdAt': FieldValue.serverTimestamp(),
       });
 
-      print('Firestore에 음식 데이터 저장 완료: $docId');
-      return docId;
+      // 2. 일일 칼로리 업데이트
+      final dateStr = DateFormat('yyyy-MM-dd').format(food.dateTime);
+      final calorieRef = _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('dailyCalories')
+          .doc(dateStr);
+
+      // 트랜잭션 대신 배치 작업으로 처리
+      batch.set(calorieRef, {
+        'calories': FieldValue.increment(food.calories),
+      }, SetOptions(merge: true));
+
+      // 배치 작업 실행
+      await batch.commit();
+
+      print('음식 추가 완료: ${foodRef.id}');
+      return foodRef.id;
     } catch (e) {
-      print('Firestore 음식 데이터 저장 오류: $e');
-      throw e;
+      print('Firestore 음식 추가 오류: $e');
+      rethrow;
     }
   }
 
@@ -183,7 +169,7 @@ class FirestoreService {
       final foods = snapshot.docs.map((doc) {
         final data = doc.data();
         return Food(
-          id: int.tryParse(doc.id) ?? 0,
+          id: doc.id, // 문서 ID를 그대로 사용
           name: data['name'] ?? '',
           calories: data['calories'] ?? 0,
           carbs: (data['carbs'] ?? 0).toDouble(),
@@ -205,110 +191,61 @@ class FirestoreService {
     }
   }
 
-  // 음식 데이터 삭제 - 이미지도 함께 삭제
+  // 음식 삭제 - 성능 최적화
   Future<void> deleteFood(
-    String uid,
-    String foodId,
+    String userId,
+    dynamic foodId,
     int calories,
     DateTime dateTime,
-    String? imageUrl, // 이미지 URL 추가
+    String? imageUrl,
   ) async {
     try {
-      final dateString = DateFormat('yyyy-MM-dd').format(dateTime);
+      // 배치 작업으로 여러 문서를 한 번에 업데이트
+      WriteBatch batch = _firestore.batch();
 
-      // 1. 이미지가 있다면 먼저 삭제
+      // 1. 음식 문서 삭제
+      final foodRef = _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('foods')
+          .doc(foodId.toString());
+
+      batch.delete(foodRef);
+
+      // 2. 일일 칼로리 업데이트
+      final dateStr = DateFormat('yyyy-MM-dd').format(dateTime);
+      final calorieRef = _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('dailyCalories')
+          .doc(dateStr);
+
+      // 음수 값이 되지 않도록 보호
+      batch.set(calorieRef, {
+        'calories': FieldValue.increment(-calories),
+      }, SetOptions(merge: true));
+
+      // 배치 작업 실행
+      await batch.commit();
+
+      // 3. 이미지가 있으면 Storage에서 삭제 (배치 작업 외부에서 처리)
       if (imageUrl != null &&
           imageUrl.isNotEmpty &&
-          !imageUrl.startsWith('data:')) {
+          imageUrl.startsWith('gs://')) {
         try {
-          // Firebase Storage에서 이미지 삭제
           final ref = FirebaseStorage.instance.refFromURL(imageUrl);
           await ref.delete();
-          print('Firebase Storage에서 이미지 삭제 완료: $imageUrl');
-        } catch (imageError) {
-          print('이미지 삭제 실패 (계속 진행): $imageError');
-          // 이미지 삭제 실패해도 문서는 삭제 진행
+          print('이미지 삭제 완료: $imageUrl');
+        } catch (e) {
+          print('이미지 삭제 오류: $e');
+          // 이미지 삭제 실패해도 계속 진행
         }
       }
 
-      // 2. Firestore에서 음식 문서 삭제 및 칼로리 업데이트
-      await _firestore.runTransaction((transaction) async {
-        // 읽기 작업 먼저
-        final calorieDocRef = _firestore
-            .collection('users')
-            .doc(uid)
-            .collection('dailyCalories')
-            .doc(dateString);
-
-        final calorieDoc = await transaction.get(calorieDocRef);
-
-        // 먼저 해당 ID로 음식 문서 찾기
-        final foodsQuery = await _firestore
-            .collection('users')
-            .doc(uid)
-            .collection('foods')
-            .where(FieldPath.documentId, isEqualTo: foodId)
-            .get();
-
-        // 음식 문서가 없으면 ID로 직접 조회
-        if (foodsQuery.docs.isEmpty) {
-          // 모든 음식 문서 조회
-          final allFoodsQuery = await _firestore
-              .collection('users')
-              .doc(uid)
-              .collection('foods')
-              .get();
-
-          // 로그 출력
-          print('Firestore에서 삭제할 음식 ID: $foodId');
-          print('조회된 전체 음식 문서 수: ${allFoodsQuery.docs.length}');
-
-          // 일치하는 문서 찾기
-          bool foodFound = false;
-          for (var doc in allFoodsQuery.docs) {
-            print('문서 ID: ${doc.id}, 음식명: ${doc.data()['name']}');
-            if (doc.id == foodId) {
-              transaction.delete(doc.reference);
-              foodFound = true;
-              print('일치하는 음식 문서를 찾아 삭제합니다: ${doc.id}');
-              break;
-            }
-          }
-
-          if (!foodFound) {
-            print('삭제할 음식 문서를 찾을 수 없습니다: $foodId');
-            // 그래도 일일 칼로리는 업데이트
-          }
-        } else {
-          // 음식 문서 삭제
-          transaction.delete(foodsQuery.docs.first.reference);
-          print('음식 문서 삭제 완료: $foodId');
-        }
-
-        // 일일 칼로리 업데이트
-        if (calorieDoc.exists) {
-          final currentCalories = calorieDoc.data()?['calories'] ?? 0;
-          final newCalories = (currentCalories - calories).clamp(
-            0,
-            double.infinity,
-          );
-
-          if (newCalories > 0) {
-            transaction.update(calorieDocRef, {
-              'calories': newCalories,
-              'updatedAt': FieldValue.serverTimestamp(),
-            });
-          } else {
-            // 칼로리가 0이면 문서 삭제
-            transaction.delete(calorieDocRef);
-          }
-        }
-      });
-
-      print('Firestore에서 음식 데이터 삭제 완료');
+      print('음식 삭제 완료: $foodId');
     } catch (e) {
-      print('Firestore 음식 데이터 삭제 오류: $e');
-      throw e;
+      print('Firestore 음식 삭제 오류: $e');
+      rethrow;
     }
   }
 
@@ -406,7 +343,7 @@ class FirestoreService {
       final foods = snapshot.docs.map((doc) {
         final data = doc.data();
         return Food(
-          id: int.tryParse(doc.id) ?? 0,
+          id: doc.id, // 문서 ID를 그대로 사용
           name: data['name'] ?? '',
           calories: data['calories'] ?? 0,
           carbs: (data['carbs'] ?? 0).toDouble(),

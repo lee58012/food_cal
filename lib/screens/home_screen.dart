@@ -12,6 +12,7 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
 import 'package:hoseo/utils/image_helper.dart';
+import 'package:hoseo/utils/auth_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,7 +26,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isLoading = false;
   StreamSubscription? _foodsSubscription;
   StreamSubscription? _userSubscription;
-  DateTime _lastSelectedDate = DateTime.now();
+  final AuthService _authService = AuthService();
 
   @override
   void initState() {
@@ -135,22 +136,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final foodProvider = Provider.of<FoodProvider>(context, listen: false);
 
     try {
-      // 선택된 날짜가 변경된 경우에만 데이터 로드
-      if (_lastSelectedDate != foodProvider.selectedDate) {
-        await foodProvider.loadFoodsByDate(foodProvider.selectedDate);
-        _lastSelectedDate = foodProvider.selectedDate;
-      }
+      // 항상 최신 데이터를 로드하도록 수정
+      await foodProvider.loadFoodsByDate(foodProvider.selectedDate);
 
       // 캐시된 칼로리 데이터 사용 - double 타입으로 변경
       final localCalories = foodProvider.totalCaloriesForSelectedDate;
 
-      // 값이 실제로 변경된 경우에만 setState 호출
-      if (_currentCalories != localCalories) {
-        if (mounted) {
-          setState(() {
-            _currentCalories = localCalories;
-          });
-        }
+      // 항상 UI 업데이트하도록 수정
+      if (mounted) {
+        setState(() {
+          _currentCalories = localCalories;
+        });
       }
     } catch (e) {
       // 오류 발생 시에도 값이 다른 경우에만 setState
@@ -210,6 +206,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _isLoading ? null : _loadData,
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              try {
+                await _authService.signOut();
+                if (mounted) {
+                  Navigator.of(context).pushReplacementNamed('/login');
+                }
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('로그아웃 중 오류가 발생했습니다: $e')),
+                );
+              }
+            },
+            tooltip: '로그아웃',
           ),
         ],
       ),

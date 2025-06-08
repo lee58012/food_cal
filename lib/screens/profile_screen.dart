@@ -367,19 +367,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final userProvider = Provider.of<UserProvider>(context);
-    final isLoggedIn = userProvider.isLoggedIn;
+    final user = userProvider.user;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('내 프로필'),
         centerTitle: true,
         actions: [
-          if (isLoggedIn)
-            IconButton(
-              icon: const Icon(Icons.logout),
-              onPressed: _logout,
-              tooltip: '로그아웃',
-            ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () async {
+              try {
+                await _authService.signOut();
+                if (mounted) {
+                  Navigator.of(context).pushReplacementNamed('/login');
+                }
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('로그아웃 중 오류가 발생했습니다: $e')),
+                );
+              }
+            },
+            tooltip: '로그아웃',
+          ),
         ],
       ),
       body: _isLoading
