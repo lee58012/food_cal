@@ -30,7 +30,6 @@ class _CameraScreenState extends State<CameraScreen> {
   final _sugarController = TextEditingController();
   bool _isAnalyzing = false;
   bool _isUploading = false;
-  bool _isSaving = false;
   bool _isAddingManually = false;
   String _foodName = '';
 
@@ -136,12 +135,6 @@ class _CameraScreenState extends State<CameraScreen> {
   }
 
   Future<void> _saveFood() async {
-    // 중복 저장 방지
-    if (_isSaving) {
-      print('이미 저장 중입니다. 중복 호출 방지');
-      return;
-    }
-
     if (!_formKey.currentState!.validate() || _imageFile == null) {
       ScaffoldMessenger.of(
         context,
@@ -151,7 +144,6 @@ class _CameraScreenState extends State<CameraScreen> {
 
     setState(() {
       _isUploading = true;
-      _isSaving = true; // 저장 시작
     });
 
     try {
@@ -163,47 +155,69 @@ class _CameraScreenState extends State<CameraScreen> {
         throw Exception('이미지 업로드에 실패했습니다.');
       }
 
-      // 음식 데이터 생성 및 저장 (한 번만 호출)
+      final food_name = _nameController.text;
+      final calories = int.tryParse(_caloriesController.text) ?? 0;
+      final carbs = double.tryParse(_carbsController.text) ?? 0;
+      final protein = double.tryParse(_proteinController.text) ?? 0;
+      final fat = double.tryParse(_fatController.text) ?? 0;
+      final sodium = double.tryParse(_sodiumController.text) ?? 0;
+      final cholesterol = double.tryParse(_cholesterolController.text) ?? 0;
+      final sugar = double.tryParse(_sugarController.text) ?? 0;
+
+      // 음식 데이터 생성
       final food = Food(
-        food_name: _nameController.text,
-        calories: int.tryParse(_caloriesController.text) ?? 0,
-        carbs: double.tryParse(_carbsController.text) ?? 0,
-        protein: double.tryParse(_proteinController.text) ?? 0,
-        fat: double.tryParse(_fatController.text) ?? 0,
-        sodium: double.tryParse(_sodiumController.text) ?? 0,
-        cholesterol: double.tryParse(_cholesterolController.text) ?? 0,
-        sugar: double.tryParse(_sugarController.text) ?? 0,
+        food_name: food_name,
+        calories: calories,
+        carbs: carbs,
+        protein: protein,
+        fat: fat,
+        sodium: sodium,
+        cholesterol: cholesterol,
+        sugar: sugar,
         imageUrl: imageUrl,
         dateTime: DateTime.now(),
       );
 
+      // 음식 추가
       await foodProvider.addFood(food);
 
       if (mounted) {
+        // 입력 필드 초기화
         _resetForm();
+
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('식단이 성공적으로 저장되었습니다')));
+
+        // 현재 날짜로 설정하여 오늘 추가한 식단이 표시되도록 함
         foodProvider.selectDate(DateTime.now());
+
+        // 홈 화면으로 이동하기 전에 데이터 갱신 확인
         await Future.delayed(const Duration(milliseconds: 300));
+
+        // 홈 화면으로 이동 및 데이터 갱신
         mainScreenKey.currentState?.navigateToTab(0);
       }
     } catch (e) {
       if (mounted) {
+        String errorMessage = '식단 저장 중 오류가 발생했습니다';
+        if (e is Exception) {
+          errorMessage = e.toString().replaceAll('Exception: ', '');
+        }
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('식단 저장 중 오류가 발생했습니다: $e')));
+        ).showSnackBar(SnackBar(content: Text(errorMessage)));
       }
     } finally {
       if (mounted) {
         setState(() {
           _isUploading = false;
-          _isSaving = false; // 저장 완료
         });
       }
     }
   }
 
+  // 입력 필드 초기화 메서드
   void _resetForm() {
     setState(() {
       _imageFile = null;
@@ -217,7 +231,6 @@ class _CameraScreenState extends State<CameraScreen> {
       _sugarController.clear();
       _foodName = '';
       _isAddingManually = false;
-      _isSaving = false; // 플래그 초기화
     });
   }
 

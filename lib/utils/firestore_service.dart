@@ -4,13 +4,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hoseo/models/user.dart';
 import 'package:hoseo/models/food.dart';
 import 'package:intl/intl.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
 import 'dart:convert';
 
 class FirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
 
   // 사용자 데이터 저장
   Future<void> saveUserData(User user) async {
@@ -293,19 +291,6 @@ class FirestoreService {
         }
       });
 
-      // 이미지가 있으면 Storage에서도 삭제
-      if (imageUrl != null &&
-          imageUrl.isNotEmpty &&
-          imageUrl.startsWith('http')) {
-        try {
-          final ref = _storage.refFromURL(imageUrl);
-          await ref.delete();
-          print('Storage에서 이미지 삭제 완료: $imageUrl');
-        } catch (e) {
-          print('Storage 이미지 삭제 오류 (무시됨): $e');
-        }
-      }
-
       print('Firestore에서 음식 데이터 삭제 완료: $foodId');
     } catch (e) {
       print('Firestore 음식 데이터 삭제 오류: $e');
@@ -357,47 +342,21 @@ class FirestoreService {
     }
   }
 
-  // 이미지 업로드
+  // 이미지를 Base64로 인코딩하여 반환
   Future<String?> uploadFoodImage(String uid, File image) async {
     try {
-      // 파일 크기 확인
+      // 파일 크기 확인 (2MB 제한)
       final bytes = await image.readAsBytes();
       if (bytes.length > 2 * 1024 * 1024) {
-        // 2MB 제한
         throw Exception('이미지 크기가 너무 큽니다 (최대 2MB)');
       }
 
-      // Base64로 인코딩하여 반환 (Firebase Storage 대신 사용)
+      // Base64로 인코딩하여 반환
       final base64String = base64Encode(bytes);
       return 'data:image/jpeg;base64,$base64String';
-
-      /* Firebase Storage 업로드는 일단 비활성화
-      // Firebase Storage에 업로드
-      final fileName = 'foods/${uid}/${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final ref = _storage.ref(fileName);
-      
-      final uploadTask = ref.putFile(
-        image,
-        SettableMetadata(contentType: 'image/jpeg'),
-      );
-      
-      final snapshot = await uploadTask;
-      final downloadUrl = await snapshot.ref.getDownloadURL();
-      
-      return downloadUrl;
-      */
     } catch (e) {
-      print('이미지 업로드 오류: $e');
-
-      // 대체 방법: Base64로 인코딩
-      try {
-        final bytes = await image.readAsBytes();
-        final base64String = base64Encode(bytes);
-        return 'data:image/jpeg;base64,$base64String';
-      } catch (e2) {
-        print('Base64 인코딩 오류: $e2');
-        return null;
-      }
+      print('이미지 인코딩 오류: $e');
+      return null;
     }
   }
 }

@@ -24,10 +24,12 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   double _currentCalories = 0.0;
   bool _isLoading = false;
-  bool _subscriptionActive = false;
   StreamSubscription? _foodsSubscription;
   StreamSubscription? _userSubscription;
   DateTime _lastSelectedDate = DateTime.now();
+  FoodProvider? _foodProvider;
+  UserProvider? _userProvider;
+  bool _isDisposed = false; // dispose 상태 추적
 
   @override
   void initState() {
@@ -36,35 +38,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     // 데이터 로드 후 구독 설정
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      if (mounted && !_isDisposed) {
         _loadData().then((_) {
-          _setupSubscriptions();
+          if (mounted && !_isDisposed) {
+            _setupSubscriptions();
+          }
         });
       }
     });
   }
 
-  // didChangeDependencies에서 불필요한 호출 제거 - 깜빡임 방지
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // _updateCalorieData(); // 이 줄 삭제 - 깜빡임 원인
+    if (!_isDisposed) {
+      _foodProvider = Provider.of<FoodProvider>(context, listen: false);
+      _userProvider = Provider.of<UserProvider>(context, listen: false);
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && !_isDisposed) {
       _loadData();
     }
   }
 
   void _setupSubscriptions() {
-    final user = Provider.of<UserProvider>(context, listen: false).user;
-    if (user?.uid != null && !_subscriptionActive) {
-      // 플래그 확인 추가
-      _subscriptionActive = true; // 구독 활성화 표시
+    if (_isDisposed) return;
 
-      // 전체 음식 데이터에 대한 구독
+    final user = _userProvider?.user;
+    if (user?.uid != null) {
+      if (_foodsSubscription != null) return;
+
       _foodsSubscription = FirebaseFirestore.instance
           .collection('users')
           .doc(user!.uid)
@@ -72,24 +78,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           .snapshots()
           .listen(
             (snapshot) async {
-              if (mounted && _subscriptionActive) {
-                // 구독 활성화 상태 확인
-                // 디바운싱을 위한 지연 추가
-                await Future.delayed(const Duration(milliseconds: 500));
+              if (mounted && !_isDisposed && _foodProvider != null) {
+                await Future.delayed(const Duration(milliseconds: 100));
 
-                if (mounted && _subscriptionActive) {
-                  final foodProvider = Provider.of<FoodProvider>(
-                    context,
-                    listen: false,
-                  );
-                  await foodProvider.loadFoods();
-                  await foodProvider.loadFoodsByDate(foodProvider.selectedDate);
+                if (mounted && !_isDisposed && _foodProvider != null) {
+                  await _foodProvider!.loadFoods();
                   await _updateCalorieData();
                 }
               }
             },
             onError: (error) {
-              print('Firestore 구독 오류: $error');
+              debugPrint('Firestore 구독 오류: $error');
             },
             cancelOnError: false,
           );
@@ -98,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    _subscriptionActive = false; // 구독 비활성화
+    _isDisposed = true; // dispose 상태 설정
     _foodsSubscription?.cancel();
     _userSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
@@ -106,27 +105,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _loadData() async {
-    if (!mounted) return;
+    if (!mounted ||
+        _isDisposed ||
+        _userProvider == null ||
+        _foodProvider == null)
+      return;
 
-    setState(() {
-      _isLoading = true;
-    });
+    if (mounted && !_isDisposed) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
 
     try {
-      await Provider.of<UserProvider>(context, listen: false).loadUser();
-
-      // 전체 데이터를 로드하도록 수정
-      final foodProvider = Provider.of<FoodProvider>(context, listen: false);
-      await foodProvider.loadFoods();
-
-      // 현재 선택된 날짜의 데이터도 함께 로드
-      await foodProvider.loadFoodsByDate(foodProvider.selectedDate);
-
+      await _userProvider!.loadUser();
+      await _foodProvider!.loadFoods();
+      await _foodProvider!.loadFoodsByDate(_foodProvider!.selectedDate);
       await _updateCalorieData();
     } catch (e) {
       debugPrint('데이터 로드 오류: $e');
     } finally {
-      if (mounted) {
+      if (mounted && !_isDisposed) {
         setState(() {
           _isLoading = false;
         });
@@ -134,33 +133,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  // 수정된 _updateCalorieData 메서드
   Future<void> _updateCalorieData() async {
-    if (!mounted) return;
-
-    final foodProvider = Provider.of<FoodProvider>(context, listen: false);
+    if (!mounted || _isDisposed || _foodProvider == null) return;
 
     try {
-      // 선택된 날짜가 변경된 경우에만 데이터 로드
-      if (_lastSelectedDate != foodProvider.selectedDate) {
-        await foodProvider.loadFoodsByDate(foodProvider.selectedDate);
-        _lastSelectedDate = foodProvider.selectedDate;
+      if (_lastSelectedDate != _foodProvider!.selectedDate) {
+        await _foodProvider!.loadFoodsByDate(_foodProvider!.selectedDate);
+        _lastSelectedDate = _foodProvider!.selectedDate;
       }
 
-      // 캐시된 칼로리 데이터 사용 - double 타입으로 변경
-      final localCalories = foodProvider.totalCaloriesForSelectedDate;
+      final localCalories = _foodProvider!.totalCaloriesForSelectedDate;
 
-      // 값이 실제로 변경된 경우에만 setState 호출
-      if (_currentCalories != localCalories) {
-        if (mounted) {
-          setState(() {
-            _currentCalories = localCalories;
-          });
-        }
+      if (_currentCalories != localCalories && mounted && !_isDisposed) {
+        setState(() {
+          _currentCalories = localCalories;
+        });
       }
     } catch (e) {
-      // 오류 발생 시에도 값이 다른 경우에만 setState
-      if (mounted && _currentCalories != 0.0) {
+      if (mounted && !_isDisposed && _currentCalories != 0.0) {
         setState(() {
           _currentCalories = 0.0;
         });
@@ -171,24 +161,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   // 목표량 계산 메서드들
   double _getTargetCarbs(UserProvider userProvider) {
     final targetCalories = userProvider.user?.targetCalories ?? 2000;
-    // 탄수화물은 총 칼로리의 45-65% (평균 55%)
-    return (targetCalories * 0.55) / 4.0; // 탄수화물 1g = 4kcal
+    return (targetCalories * 0.55) / 4.0;
   }
 
   double _getTargetProtein(UserProvider userProvider) {
     final weight = userProvider.user?.weight ?? 70.0;
-    // 단백질은 체중 1kg당 0.8-1.2g (평균 1.0g)
     return weight * 1.0;
   }
 
   double _getTargetFat(UserProvider userProvider) {
     final targetCalories = userProvider.user?.targetCalories ?? 2000;
-    // 지방은 총 칼로리의 20-35% (평균 30%)
-    return (targetCalories * 0.30) / 9.0; // 지방 1g = 9kcal
+    return (targetCalories * 0.30) / 9.0;
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isDisposed) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     final foodProvider = Provider.of<FoodProvider>(context);
     final userProvider = Provider.of<UserProvider>(context);
 
@@ -200,6 +191,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           IconButton(
             icon: const Icon(Icons.calendar_today),
             onPressed: () async {
+              if (_isDisposed) return;
+
               final selectedDate = await showDatePicker(
                 context: context,
                 initialDate: foodProvider.selectedDate,
@@ -207,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 lastDate: DateTime(2030),
               );
 
-              if (selectedDate != null) {
+              if (selectedDate != null && !_isDisposed) {
                 await foodProvider.selectDate(selectedDate);
                 await _updateCalorieData();
               }
@@ -215,11 +208,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: _isLoading ? null : _loadData,
+            onPressed: (_isLoading || _isDisposed) ? null : _loadData,
           ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () async {
+              if (_isDisposed) return;
+
               final confirmed = await showDialog<bool>(
                 context: context,
                 builder: (context) => AlertDialog(
@@ -238,9 +233,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               );
 
-              if (confirmed == true) {
+              if (confirmed == true && !_isDisposed) {
                 await AuthService().signOut();
-                if (mounted) {
+                if (mounted && !_isDisposed) {
                   Navigator.of(context).pushReplacementNamed('/login');
                 }
               }
@@ -271,9 +266,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           const Text('시작하기 전에 프로필을 설정해주세요', style: TextStyle(fontSize: 16)),
           const SizedBox(height: 30),
           ElevatedButton(
-            onPressed: () {
-              mainScreenKey.currentState?.navigateToTab(2);
-            },
+            onPressed: _isDisposed
+                ? null
+                : () {
+                    mainScreenKey.currentState?.navigateToTab(2);
+                  },
             child: const Text('프로필 설정하기'),
           ),
         ],
@@ -307,14 +304,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final calorieStatus = _getCalorieStatus(caloriePercentage);
 
     return RefreshIndicator(
-      onRefresh: _loadData,
+      onRefresh: _isDisposed ? () async {} : _loadData,
       child: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 사용자 인사말 - RepaintBoundary로 감싸기
+              // 사용자 인사말
               RepaintBoundary(
                 child: Row(
                   children: [
@@ -352,7 +349,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 24),
 
-              // 칼로리 요약 카드 - 수정된 부분
+              // 칼로리 요약 카드
               RepaintBoundary(
                 child: Card(
                   elevation: 4,
@@ -503,9 +500,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                         const SizedBox(height: 8),
                         Center(
                           child: TextButton(
-                            onPressed: () {
-                              mainScreenKey.currentState?.navigateToTab(2);
-                            },
+                            onPressed: _isDisposed
+                                ? null
+                                : () {
+                                    mainScreenKey.currentState?.navigateToTab(
+                                      2,
+                                    );
+                                  },
                             child: const Text('프로필 수정하기'),
                           ),
                         ),
@@ -517,7 +518,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
               const SizedBox(height: 20),
 
-              // 영양소 정보 - 간단한 카드로 교체
+              // 영양소 정보
               RepaintBoundary(
                 child: Column(
                   children: [
@@ -563,7 +564,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 12),
 
-                    // 영양소 카드들을 간단한 Card로 교체
+                    // 영양소 카드들
                     Column(
                       children: [
                         // 첫 번째 행: 탄수화물, 단백질
@@ -665,9 +666,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   TextButton.icon(
-                    onPressed: () {
-                      mainScreenKey.currentState?.navigateToTab(1);
-                    },
+                    onPressed: _isDisposed
+                        ? null
+                        : () {
+                            mainScreenKey.currentState?.navigateToTab(1);
+                          },
                     icon: const Icon(Icons.add_a_photo),
                     label: const Text('식단 추가'),
                   ),
@@ -722,51 +725,74 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             return FoodListItem(
                               food: food,
                               onTap: () {
-                                Navigator.pushNamed(
-                                  context,
-                                  '/food_detail',
-                                  arguments: food,
-                                );
+                                if (!_isDisposed) {
+                                  Navigator.pushNamed(
+                                    context,
+                                    '/food_detail',
+                                    arguments: food,
+                                  );
+                                }
                               },
                               onDelete: () async {
-                                if (food.food_id != null) {
-                                  try {
-                                    await foodProvider.deleteFood(
-                                      food.food_id!,
+                                if (_isDisposed || food.food_id == null) return;
+
+                                // 삭제 확인 다이얼로그
+                                final confirmed = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('삭제 확인'),
+                                    content: Text(
+                                      '${food.food_name}을(를) 삭제하시겠습니까?',
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(false),
+                                        child: const Text('취소'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.of(context).pop(true),
+                                        child: const Text('삭제'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                if (confirmed != true || _isDisposed) return;
+
+                                try {
+                                  // 삭제 전 리스트 상태 확인
+                                  final currentFoods =
+                                      foodProvider.foodsForSelectedDate;
+                                  print('삭제 전 음식 개수: ${currentFoods.length}');
+
+                                  await foodProvider.deleteFood(food.food_id!);
+
+                                  // 삭제 후 칼로리 업데이트
+                                  if (mounted && !_isDisposed) {
+                                    await _updateCalorieData();
+                                  }
+
+                                  if (mounted && !_isDisposed) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          '${food.food_name}이(가) 삭제되었습니다.',
+                                        ),
+                                        backgroundColor: Colors.green,
+                                      ),
                                     );
-
-                                    // 삭제 후 즉시 칼로리 업데이트
-                                    if (mounted) {
-                                      final newCalories = foodProvider
-                                          .totalCaloriesForSelectedDate;
-                                      setState(() {
-                                        _currentCalories = newCalories;
-                                      });
-                                    }
-
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            '${food.food_name}이(가) 삭제되었습니다.',
-                                          ),
-                                          backgroundColor: Colors.green,
-                                        ),
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text('삭제 중 오류가 발생했습니다: $e'),
-                                          backgroundColor: Colors.red,
-                                        ),
-                                      );
-                                    }
+                                  }
+                                } catch (e) {
+                                  print('삭제 처리 오류: $e');
+                                  if (mounted && !_isDisposed) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('삭제 중 오류가 발생했습니다: $e'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
                                   }
                                 }
                               },
@@ -786,7 +812,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return ImageHelper.getImageProvider(photoUrl);
   }
 
-  // 수정된 _buildCalorieInfo 메서드
   Widget _buildCalorieInfo(String label, double value, Color color) {
     return Column(
       children: [
@@ -815,7 +840,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  // 간단한 영양소 카드 위젯
   Widget _buildSimpleNutrientCard(
     String title,
     double value,

@@ -124,6 +124,7 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   late int _currentIndex;
   bool _dataInitialized = false;
+  bool _isDisposed = false; // dispose 상태 추적
 
   final List<Widget> _screens = [
     const HomeScreen(),
@@ -133,7 +134,9 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   // 외부에서 탭 전환을 위한 메서드
   void navigateToTab(int index) {
-    if (index >= 0 && index < _screens.length) {
+    if (_isDisposed || index < 0 || index >= _screens.length) return;
+
+    if (mounted && !_isDisposed) {
       setState(() {
         _currentIndex = index;
       });
@@ -157,18 +160,19 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _isDisposed = true;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && !_isDisposed) {
       // 앱이 포그라운드로 돌아왔을 때 데이터 새로고침 (캐시 우선 사용)
       _loadUserData(forceRefresh: false);
 
       // 현재 홈 화면이면 데이터 갱신
-      if (_currentIndex == 0) {
+      if (_currentIndex == 0 && !_isDisposed) {
         _refreshHomeData();
       }
     }
@@ -176,21 +180,31 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   // 홈 화면 데이터 갱신 메서드 (캐시 우선 사용)
   Future<void> _refreshHomeData() async {
-    final foodProvider = Provider.of<FoodProvider>(context, listen: false);
+    if (_isDisposed) return;
 
-    // 이미 캐시된 데이터가 있으면 불필요한 로드 방지
-    if (foodProvider.foodsForSelectedDate.isEmpty) {
-      await foodProvider.loadFoodsByDate(foodProvider.selectedDate);
+    try {
+      final foodProvider = Provider.of<FoodProvider>(context, listen: false);
+
+      // 이미 캐시된 데이터가 있으면 불필요한 로드 방지
+      if (foodProvider.foodsForSelectedDate.isEmpty) {
+        await foodProvider.loadFoodsByDate(foodProvider.selectedDate);
+      }
+    } catch (e) {
+      print('홈 데이터 갱신 오류: $e');
     }
   }
 
   Future<void> _loadUserData({bool forceRefresh = true}) async {
+    if (_isDisposed) return;
+
     // 사용자 로그인 상태 확인
     final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
+    if (user != null && !_isDisposed) {
       try {
         // 사용자 정보 로드 (변경이 있을 때만)
         await Provider.of<UserProvider>(context, listen: false).loadUser();
+
+        if (_isDisposed) return;
 
         // 최초 1회만 전체 데이터 로드, 이후에는 필요한 데이터만 로드
         if (!_dataInitialized || forceRefresh) {
@@ -199,10 +213,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             listen: false,
           );
           await foodProvider.loadFoods();
-          _dataInitialized = true;
+          if (!_isDisposed) {
+            _dataInitialized = true;
+          }
         } else {
           // 현재 선택된 날짜의 데이터만 갱신 (캐시 우선 사용)
-          if (_currentIndex == 0) {
+          if (_currentIndex == 0 && !_isDisposed) {
             _refreshHomeData();
           }
         }
@@ -214,18 +230,26 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    if (_isDisposed) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
+          if (_isDisposed) return;
 
-          // 홈 탭으로 이동하면 데이터 갱신 (캐시 우선 사용)
-          if (index == 0) {
-            _refreshHomeData();
+          if (mounted && !_isDisposed) {
+            setState(() {
+              _currentIndex = index;
+            });
+
+            // 홈 탭으로 이동하면 데이터 갱신 (캐시 우선 사용)
+            if (index == 0 && !_isDisposed) {
+              _refreshHomeData();
+            }
           }
         },
         items: const [
