@@ -48,7 +48,6 @@ class FoodProvider with ChangeNotifier {
 
     if (_cachedFoodsByDate.containsKey(selectedDateStr)) {
       final cachedList = _cachedFoodsByDate[selectedDateStr] ?? [];
-      print('캐시에서 음식 데이터 가져옴: $selectedDateStr, 개수: ${cachedList.length}');
       return List.from(cachedList); // 복사본 반환으로 안전성 확보
     }
 
@@ -60,7 +59,6 @@ class FoodProvider with ChangeNotifier {
 
     // 결과 캐싱
     _cachedFoodsByDate[selectedDateStr] = filteredFoods;
-    print('필터링된 음식 데이터 캐싱: $selectedDateStr, 개수: ${filteredFoods.length}');
     return filteredFoods;
   }
 
@@ -172,8 +170,6 @@ class FoodProvider with ChangeNotifier {
     _safeNotifyListeners();
 
     try {
-      print('Firestore에서 전체 음식 데이터 로드 시작');
-
       final snapshot = await FirebaseFirestore.instance
           .collection('users')
           .doc(currentUser.uid)
@@ -212,8 +208,6 @@ class FoodProvider with ChangeNotifier {
 
       if (_isDisposed) return;
 
-      print('Firestore에서 가져온 전체 음식 데이터 수: ${_foods.length}');
-
       _clearCache();
       _updateCacheFromLocalData();
 
@@ -224,9 +218,7 @@ class FoodProvider with ChangeNotifier {
         return foodDateStr == selectedDateStr;
       }).toList();
       _cachedFoodsByDate[selectedDateStr] = filteredFoods;
-      print('현재 선택된 날짜($selectedDateStr)의 데이터 수: ${filteredFoods.length}');
     } catch (e) {
-      print('Firestore 데이터 로드 오류: $e');
       if (!_isDisposed) {
         _foods = [];
         _clearCache();
@@ -248,9 +240,6 @@ class FoodProvider with ChangeNotifier {
 
     // 이미 캐시된 데이터가 있으면 사용
     if (_cachedFoodsByDate.containsKey(dateStr)) {
-      print(
-        '캐시된 데이터 사용: $dateStr, 개수: ${_cachedFoodsByDate[dateStr]?.length ?? 0}',
-      );
       return;
     }
 
@@ -268,8 +257,6 @@ class FoodProvider with ChangeNotifier {
       (sum, food) => sum + food.calories,
     );
     _cachedCaloriesByDate[dateStr] = totalCalories;
-
-    print('날짜별 데이터 캐싱 완료: $dateStr, 개수: ${filteredFoods.length}');
   }
 
   // 캐시 초기화
@@ -284,8 +271,6 @@ class FoodProvider with ChangeNotifier {
 
     final dateFormat = DateFormat('yyyy-MM-dd');
     _clearCache();
-
-    print('로컬 데이터로 캐시 업데이트 시작: ${_foods.length}개 음식');
 
     // 날짜별로 음식 분류
     for (var food in _foods) {
@@ -305,11 +290,7 @@ class FoodProvider with ChangeNotifier {
     }
 
     // 캐시된 날짜 및 데이터 수 로그
-    _cachedFoodsByDate.forEach((date, foods) {
-      print('캐시된 날짜: $date, 음식 수: ${foods.length}');
-    });
-
-    print('캐시 업데이트 완료: ${_cachedFoodsByDate.length}개 날짜');
+    _cachedFoodsByDate.forEach((date, foods) {});
   }
 
   // 음식 추가 - 안전한 버전
@@ -353,8 +334,6 @@ class FoodProvider with ChangeNotifier {
 
       if (_isDisposed) return;
 
-      print('Firestore에 음식 저장 완료: $firestoreId');
-
       _localToFirestoreIdMap[localId] = firestoreId;
 
       final newFood = Food(
@@ -377,7 +356,6 @@ class FoodProvider with ChangeNotifier {
         final foodMap = newFood.toMap();
         foodMap.remove('firestore_id');
         await dbHelper.insertFood(foodMap);
-        print('로컬 DB에 저장 완료: $localId');
       }
 
       if (_isDisposed) return;
@@ -423,10 +401,7 @@ class FoodProvider with ChangeNotifier {
 
       final currentCachedCalories = _cachedCaloriesByDate[dateStr] ?? 0;
       _cachedCaloriesByDate[dateStr] = currentCachedCalories + food.calories;
-
-      print('음식 추가 완료: ${newFood.food_name}');
     } catch (e) {
-      print('음식 추가 오류: $e');
       rethrow;
     } finally {
       if (!_isDisposed) {
@@ -436,7 +411,7 @@ class FoodProvider with ChangeNotifier {
     }
   }
 
-  // 음식 삭제 - 안전한 인덱스 처리
+  // 음식 삭제 - 칼로리 중복 차감 방지
   Future<void> deleteFood(int localId) async {
     if (_isDisposed) return;
 
@@ -447,12 +422,9 @@ class FoodProvider with ChangeNotifier {
     _safeNotifyListeners();
 
     try {
-      // 삭제할 음식 찾기 - 안전한 인덱스 확인
+      // 삭제할 음식 찾기
       final foodIndex = _foods.indexWhere((food) => food.food_id == localId);
       if (foodIndex == -1 || foodIndex >= _foods.length) {
-        print(
-          '삭제할 음식을 찾을 수 없거나 잘못된 인덱스: $localId, 인덱스: $foodIndex, 리스트 크기: ${_foods.length}',
-        );
         return;
       }
 
@@ -460,12 +432,9 @@ class FoodProvider with ChangeNotifier {
       final dateFormat = DateFormat('yyyy-MM-dd');
       final dateStr = dateFormat.format(food.dateTime);
 
-      print('삭제할 음식: ${food.food_name}, 로컬 ID: $localId, 인덱스: $foodIndex');
-
       // Firestore 문서 ID 찾기
       final firestoreId = _localToFirestoreIdMap[localId];
       if (firestoreId == null) {
-        print('Firestore 문서 ID를 찾을 수 없습니다: $localId');
         return;
       }
 
@@ -473,41 +442,43 @@ class FoodProvider with ChangeNotifier {
       if (!kIsWeb && !_isDisposed) {
         final dbHelper = DatabaseHelper();
         await dbHelper.deleteFood(localId);
-        print('로컬 DB에서 삭제 완료: $localId');
       }
 
       if (_isDisposed) return;
 
-      // Firestore에서 삭제
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUser.uid)
-          .collection('foods')
-          .doc(firestoreId)
-          .delete();
+      // Firestore에서 삭제 (칼로리 업데이트는 여기서만 수행)
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final foodDocRef = FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .collection('foods')
+            .doc(firestoreId);
 
-      print('Firestore에서 음식 삭제: $firestoreId');
+        final calorieDocRef = FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .collection('dailyCalories')
+            .doc(dateStr);
 
-      if (_isDisposed) return;
+        // 읽기 작업 먼저 수행
+        final calorieDoc = await transaction.get(calorieDocRef);
 
-      // 일일 칼로리 업데이트
-      final calorieDocRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUser.uid)
-          .collection('dailyCalories')
-          .doc(dateStr);
+        // 쓰기 작업 수행
+        transaction.delete(foodDocRef);
 
-      final calorieDoc = await calorieDocRef.get();
-      if (calorieDoc.exists) {
-        final currentCalories = calorieDoc.data()?['calories'] ?? 0;
-        final newCalories = (currentCalories - food.calories)
-            .clamp(0, double.infinity)
-            .toInt();
-        await calorieDocRef.update({
-          'calories': newCalories,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-      }
+        // 일일 칼로리 업데이트 (한 번만)
+        if (calorieDoc.exists) {
+          final currentCalories = calorieDoc.data()?['calories'] ?? 0;
+          final newCalories = (currentCalories - food.calories)
+              .clamp(0, double.infinity)
+              .toInt();
+
+          transaction.update(calorieDocRef, {
+            'calories': newCalories,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+      });
 
       if (_isDisposed) return;
 
@@ -515,7 +486,6 @@ class FoodProvider with ChangeNotifier {
       if (foodIndex < _foods.length) {
         _foods.removeAt(foodIndex);
         _localToFirestoreIdMap.remove(localId);
-        print('메모리에서 삭제 완료: ${_foods.length}개 남음');
       }
 
       // 캐시에서 안전하게 삭제
@@ -525,22 +495,20 @@ class FoodProvider with ChangeNotifier {
 
         if (cacheIndex != -1 && cacheIndex < cachedList.length) {
           cachedList.removeAt(cacheIndex);
-          print('캐시에서 삭제 완료: ${cachedList.length}개 남음');
         }
 
-        // 칼로리 캐시 업데이트
+        // 캐시 칼로리 업데이트 (한 번만)
         final currentCachedCalories = _cachedCaloriesByDate[dateStr] ?? 0;
-        _cachedCaloriesByDate[dateStr] = (currentCachedCalories - food.calories)
+        final newCachedCalories = (currentCachedCalories - food.calories)
             .clamp(0, double.infinity)
             .toInt();
-      }
 
-      print('음식 삭제 완료: ${food.food_name}');
+        _cachedCaloriesByDate[dateStr] = newCachedCalories;
+      }
     } catch (e) {
-      print('음식 삭제 오류: $e');
-      // 오류 발생 시에도 UI 상태는 정상적으로 복구
+      // 오류 발생 시 전체 데이터 재로드
       if (!_isDisposed) {
-        await loadFoods(); // 전체 데이터 다시 로드
+        await loadFoods();
       }
     } finally {
       if (!_isDisposed) {

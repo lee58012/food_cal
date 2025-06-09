@@ -762,17 +762,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 if (confirmed != true || _isDisposed) return;
 
                                 try {
-                                  // 삭제 전 리스트 상태 확인
-                                  final currentFoods =
-                                      foodProvider.foodsForSelectedDate;
-                                  print('삭제 전 음식 개수: ${currentFoods.length}');
+                                  print(
+                                    '삭제 시작: ${food.food_name}, 칼로리: ${food.calories}',
+                                  );
 
                                   await foodProvider.deleteFood(food.food_id!);
 
-                                  // 삭제 후 칼로리 업데이트
-                                  if (mounted && !_isDisposed) {
-                                    await _updateCalorieData();
-                                  }
+                                  // 삭제 후 UI 업데이트는 Firestore 구독을 통해 자동으로 처리됨
+                                  // 수동 칼로리 업데이트 제거하여 중복 차감 방지
 
                                   if (mounted && !_isDisposed) {
                                     ScaffoldMessenger.of(context).showSnackBar(

@@ -32,40 +32,57 @@ class _CameraScreenState extends State<CameraScreen> {
   bool _isUploading = false;
   bool _isAddingManually = false;
   String _foodName = '';
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    _caloriesController.dispose();
-    _carbsController.dispose();
-    _proteinController.dispose();
-    _fatController.dispose();
-    _sodiumController.dispose();
-    _cholesterolController.dispose();
-    _sugarController.dispose();
-    super.dispose();
-  }
+  bool _isProcessing = false; // 중복 처리 방지 플래그 추가
 
   Future<void> _takePicture() async {
+    if (_isProcessing) return; // 중복 처리 방지
+
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(
       source: ImageSource.camera,
       maxWidth: 800,
       maxHeight: 800,
+      imageQuality: 85, // 품질 설정 추가
     );
 
     if (pickedFile != null) {
-      setState(() {
-        _imageFile = File(pickedFile.path);
-        _isAnalyzing = true;
-      });
+      await _processSelectedImage(File(pickedFile.path));
+    }
+  }
 
-      try {
-        // 이미지 분석 요청
-        final foodProvider = Provider.of<FoodProvider>(context, listen: false);
-        final result = await foodProvider.analyzeFoodImage(_imageFile!);
+  Future<void> _pickFromGallery() async {
+    if (_isProcessing) return; // 중복 처리 방지
 
-        // 분석 결과로 폼 채우기
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 800,
+      maxHeight: 800,
+      imageQuality: 85, // 품질 설정 추가
+    );
+
+    if (pickedFile != null) {
+      await _processSelectedImage(File(pickedFile.path));
+    }
+  }
+
+  // 이미지 처리 로직을 별도 메서드로 분리
+  Future<void> _processSelectedImage(File imageFile) async {
+    if (_isProcessing) return;
+
+    setState(() {
+      _isProcessing = true;
+      _imageFile = imageFile;
+      _isAnalyzing = true;
+    });
+
+    try {
+      // 이미지 분석 요청
+      final foodProvider = Provider.of<FoodProvider>(context, listen: false);
+      final result = await foodProvider.analyzeFoodImage(_imageFile!);
+
+      // 분석 결과로 폼 채우기
+      if (mounted) {
         setState(() {
           _nameController.text = result['name'] ?? '비빔밥';
           _caloriesController.text = (result['calories'] ?? 0).toString();
@@ -79,7 +96,9 @@ class _CameraScreenState extends State<CameraScreen> {
           _isAnalyzing = false;
           _isAddingManually = true;
         });
-      } catch (e) {
+      }
+    } catch (e) {
+      if (mounted) {
         setState(() {
           _isAnalyzing = false;
         });
@@ -87,55 +106,20 @@ class _CameraScreenState extends State<CameraScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text('음식 분석 중 오류가 발생했습니다: $e')));
       }
-    }
-  }
-
-  Future<void> _pickFromGallery() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 800,
-      maxHeight: 800,
-    );
-
-    if (pickedFile != null) {
-      setState(() {
-        _imageFile = File(pickedFile.path);
-        _isAnalyzing = true;
-      });
-
-      try {
-        // 이미지 분석 요청
-        final foodProvider = Provider.of<FoodProvider>(context, listen: false);
-        final result = await foodProvider.analyzeFoodImage(_imageFile!);
-
-        // 분석 결과로 폼 채우기
+    } finally {
+      if (mounted) {
         setState(() {
-          _nameController.text = result['name'] ?? '';
-          _caloriesController.text = (result['calories'] ?? 0).toString();
-          _carbsController.text = (result['carbs'] ?? 0).toString();
-          _proteinController.text = (result['protein'] ?? 0).toString();
-          _fatController.text = (result['fat'] ?? 0).toString();
-          _sodiumController.text = (result['sodium'] ?? 0).toString();
-          _cholesterolController.text = (result['cholesterol'] ?? 0).toString();
-          _sugarController.text = (result['sugar'] ?? 0).toString();
-          _foodName = result['name'] ?? '';
-          _isAnalyzing = false;
-          _isAddingManually = true;
+          _isProcessing = false;
         });
-      } catch (e) {
-        setState(() {
-          _isAnalyzing = false;
-        });
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('음식 분석 중 오류가 발생했습니다: $e')));
       }
     }
   }
 
   Future<void> _saveFood() async {
-    if (!_formKey.currentState!.validate() || _imageFile == null) {
+    if (!_formKey.currentState!.validate() ||
+        _imageFile == null ||
+        _isUploading ||
+        _isProcessing) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('모든 필드를 입력하고 이미지를 첨부해주세요')));
@@ -144,6 +128,7 @@ class _CameraScreenState extends State<CameraScreen> {
 
     setState(() {
       _isUploading = true;
+      _isProcessing = true;
     });
 
     try {
@@ -155,7 +140,7 @@ class _CameraScreenState extends State<CameraScreen> {
         throw Exception('이미지 업로드에 실패했습니다.');
       }
 
-      final food_name = _nameController.text;
+      final food_name = _nameController.text.trim();
       final calories = int.tryParse(_caloriesController.text) ?? 0;
       final carbs = double.tryParse(_carbsController.text) ?? 0;
       final protein = double.tryParse(_proteinController.text) ?? 0;
@@ -178,7 +163,7 @@ class _CameraScreenState extends State<CameraScreen> {
         dateTime: DateTime.now(),
       );
 
-      // 음식 추가
+      // 음식 추가 (한 번만 실행되도록 보장)
       await foodProvider.addFood(food);
 
       if (mounted) {
@@ -190,12 +175,9 @@ class _CameraScreenState extends State<CameraScreen> {
         ).showSnackBar(const SnackBar(content: Text('식단이 성공적으로 저장되었습니다')));
 
         // 현재 날짜로 설정하여 오늘 추가한 식단이 표시되도록 함
-        foodProvider.selectDate(DateTime.now());
+        await foodProvider.selectDate(DateTime.now());
 
-        // 홈 화면으로 이동하기 전에 데이터 갱신 확인
-        await Future.delayed(const Duration(milliseconds: 300));
-
-        // 홈 화면으로 이동 및 데이터 갱신
+        // 홈 화면으로 이동
         mainScreenKey.currentState?.navigateToTab(0);
       }
     } catch (e) {
@@ -212,6 +194,7 @@ class _CameraScreenState extends State<CameraScreen> {
       if (mounted) {
         setState(() {
           _isUploading = false;
+          _isProcessing = false;
         });
       }
     }
@@ -231,6 +214,7 @@ class _CameraScreenState extends State<CameraScreen> {
       _sugarController.clear();
       _foodName = '';
       _isAddingManually = false;
+      _isProcessing = false;
     });
   }
 
