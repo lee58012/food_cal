@@ -254,7 +254,6 @@ class FirestoreService {
     String foodId,
     int calories,
     DateTime dateTime,
-    String? imageUrl,
   ) async {
     try {
       await _firestore.runTransaction((transaction) async {
@@ -345,9 +344,10 @@ class FirestoreService {
   // 이미지를 Base64로 인코딩하여 반환
   Future<String?> uploadFoodImage(String uid, File image) async {
     try {
-      // 파일 크기 확인 (2MB 제한)
+      // 파일 크기 확인
       final bytes = await image.readAsBytes();
       if (bytes.length > 2 * 1024 * 1024) {
+        // 2MB 제한
         throw Exception('이미지 크기가 너무 큽니다 (최대 2MB)');
       }
 
@@ -355,7 +355,7 @@ class FirestoreService {
       final base64String = base64Encode(bytes);
       return 'data:image/jpeg;base64,$base64String';
     } catch (e) {
-      print('이미지 인코딩 오류: $e');
+      print('이미지 처리 오류: $e');
       return null;
     }
   }

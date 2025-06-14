@@ -19,7 +19,7 @@ class FoodProvider with ChangeNotifier {
   // 캐싱을 위한 변수들
   final Map<String, List<Food>> _cachedFoodsByDate = {};
   final Map<String, int> _cachedCaloriesByDate = {};
-  final Map<int, String> _localToFirestoreIdMap = {};
+  final Map<int, String> _localToFirestoreIdMap = {}; // 누락된 변수 추가
   bool _isInitialized = false;
 
   List<Food> get foods => _foods;
@@ -32,7 +32,7 @@ class FoodProvider with ChangeNotifier {
     super.dispose();
   }
 
-  // 안전한 notifyListeners 호출
+  // 안전한 notifyListeners 호출 - 누락된 메서드 추가
   void _safeNotifyListeners() {
     if (!_isDisposed) {
       notifyListeners();
@@ -288,9 +288,6 @@ class FoodProvider with ChangeNotifier {
       _cachedCaloriesByDate[dateStr] =
           (_cachedCaloriesByDate[dateStr] ?? 0) + food.calories;
     }
-
-    // 캐시된 날짜 및 데이터 수 로그
-    _cachedFoodsByDate.forEach((date, foods) {});
   }
 
   // 음식 추가 - 안전한 버전
